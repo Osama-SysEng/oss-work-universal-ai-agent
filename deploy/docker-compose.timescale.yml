@@ -1,0 +1,27 @@
+services:
+  timescaledb:
+    image: ${TIMESCALE_IMAGE:?Set TIMESCALE_IMAGE to a reviewed pinned TimescaleDB image}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${TIMESCALE_PORT:-6543}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ../db/timescale:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+
+volumes:
+  timescale_data:

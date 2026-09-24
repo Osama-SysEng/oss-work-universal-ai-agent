@@ -4,18 +4,48 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oss-work"
-version = "0.2.0"
-description = "Safe, local-first multi-agent AI runtime foundation"
-requires-python = ">=3.11"
+version = "1.0.0-dev"
+description = "Open-Source Universal AI Agent — NASA Space Apps Winner · AI Hackathon 1st Place"
 readme = "README.md"
 license = {text = "Apache-2.0"}
-authors = [{name = "OSS-Work contributors"}]
-dependencies = []
+authors = [{name = "Osama Mohamed Fathy"}]
+requires-python = ">=3.11"
+dependencies = [
+    "playwright>=1.44",
+    "python-telegram-bot>=22.0",
+    "httpx>=0.27",
+    "asyncpg>=0.29",
+    "redis>=5.0",
+    "qdrant-client>=1.9",
+    "celery>=5.4",
+    "scikit-learn>=1.4",
+    "numpy>=1.26",
+    "opencv-python>=4.9",
+    "whisper>=1.1.10",
+    "face-recognition>=1.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-asyncio>=0.23", "black>=24.0", "ruff>=0.3"]
+docker = ["docker>=7.0"]
 
 [project.scripts]
 oss-work = "core.main:main"
+oss-work-cli = "interfaces.cli.main:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-q"
+addopts = "-q --tb=short"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+
+[tool.pyright]
+include = ["core/**/*.py", "interfaces/**/*.py", "memory/**/*.py", "tests/**/*.py"]
+exclude = ["web/**", "data/**", ".git/**", ".pytest_cache/**", "__pycache__/**"]

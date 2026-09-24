@@ -23,6 +23,9 @@ def test_orchestrator_is_bounded_and_reports_no_external_actions():
 
 
 def test_integration_is_simulation_only():
-    result = IntegrationAgent(context={"task": "send", "provider": "telegram"}).execute()
+    result = IntegrationAgent(
+        context={"task": "send", "integration": "telegram", "action": "send"}
+    ).execute()
     assert result["status"] == "simulated"
+    assert result["data"]["action"] == "send"
     assert result["decision"]["external_action_attempted"] is False

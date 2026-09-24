@@ -1,0 +1,70 @@
+{
+  "productName": "OSS Work",
+  "version": "1.0.0-dev",
+  "identifier": "com.osamafathy.oss-work",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../web/dist",
+    "devtools": true
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "OSS Work — Universal AI Agent",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [],
+    "category": "Utility",
+    "shortDescription": "Open-Source Universal AI Agent",
+    "longDescription": "The world's first open-source AI agent with genuine imagination. NASA Space Apps Challenge 2025 Local Winner · AI Hackathon 2025 1st Place.",
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true,
+      "scope": [
+        {
+          "name": "python",
+          "cmd": "python",
+          "args": true
+        },
+        {
+          "name": "pip",
+          "cmd": "pip",
+          "args": true
+        }
+      ]
+    },
+    "process": {
+      "allow": true
+    }
+  }
+}

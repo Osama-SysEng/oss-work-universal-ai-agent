@@ -29,7 +29,8 @@ class FileAgent(BaseAgent):
     def _inside_root(self, value: str | Path, *, must_exist: bool = False) -> Path:
         candidate = Path(value).expanduser()
         resolved = candidate.resolve(strict=must_exist)
-        if resolved == self.root or self.root not in resolved.parents:
+        # السماح بالمجلد الجذر نفسه (يمكن قائمة محتوياته)
+        if self.root not in resolved.parents and resolved != self.root:
             raise PermissionError("path is outside the configured allowed root")
         return resolved
 

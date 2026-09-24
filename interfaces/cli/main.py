@@ -1,6 +1,15 @@
 """
-CLI Interface for OSS Work — Typer-based command-line tool.
-Provides: status, chat, test, update, models, imagination commands.
+OSS Work — CLI Interface.
+
+واجهة سطر الأوامر للوكيل. يدعم وضع桌面 المستقل (بدون تلجرام).
+
+الأ使い方:
+    oss-work run              — تشغيل الوكيل بالوضع المضبوط
+    oss-work chat "مهمة"     — معالجة مهمة عبر CLI
+    oss-work status           — عرض حالة النظام
+    oss-work models           — عرض النماذج المتاحة
+    oss-work telegram         — تشغيل بوت التلجرام
+    oss-work desktop          — تشغيل وضع桌面 فقط
 """
 
 from __future__ import annotations
@@ -14,6 +23,8 @@ from typing import Any
 
 import typer
 
+from core.config import load_config, AgentConfig, VERSION
+from core.processor import TaskProcessor
 from core.imagination.engine import UltraIQEngine
 from core.services.model_router import get_router
 from core.services.skill_downloader import get_skill_downloader
@@ -29,13 +40,11 @@ app = typer.Typer(
     add_completion=False,
 )
 
-VERSION = "0.2.0"
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
 def _run_async(coro):
-    """Run async coroutine in sync context."""
+    """تشغيل coroutine في سياق متزامن."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -49,30 +58,161 @@ def _get_data_dir() -> Path:
     return Path(os.getenv("OSS_WORK_DATA_DIR", "./data"))
 
 
-# ── Version ────────────────────────────────────────────────────
-
-@app.command()
-def version() -> None:
-    """Show OSS Work version."""
-    typer.echo(f"OSS Work v{VERSION}")
-    typer.echo("NASA Space Apps Challenge 2025 Local Winner")
-    typer.echo("AI Hackathon 2025 1st Place (260+ projects)")
+def _get_processor() -> TaskProcessor:
+    """الحصول على معالج مشترك."""
+    return TaskProcessor(load_config())
 
 
-# ── Status ─────────────────────────────────────────────────────
+# ── Commands ────────────────────────────────────────────────────
+
+@app.command(name="run")
+def run_cmd() -> None:
+    """تشغيل الوكيل بالوضع المضبوط في .env."""
+    config = load_config()
+    processor = TaskProcessor(config)
+
+    typer.echo(f"\n🚀 OSS Work v{VERSION}")
+    typer.echo(f"   الوضع: {config.mode}")
+    typer.echo(f"   المحاكاة: {'ON' if config.simulation_only else 'OFF'}")
+    typer.echo()
+
+    if config.mode == "telegram":
+        typer.echo("📱 تشغيل وضع التلجرام...")
+        from interfaces.telegram.bot import OSSWorkTelegramBot, BotConfig
+        bot_cfg = BotConfig(
+            token=config.bot_token,
+            simulation_only=config.simulation_only,
+        )
+        bot = OSSWorkTelegramBot(config=bot_cfg, processor=processor)
+        bot.setup()
+        asyncio.run(bot.run())
+
+    elif config.mode == "desktop":
+        if config.api_enabled:
+            typer.echo("🌐 تشغيل وضع API المحلي...")
+            typer.echo(f"   URL: http://{config.api_host}:{config.api_port}")
+            typer.echo(f"   Docs: http://{config.api_host}:{config.api_port}/docs")
+            typer.echo()
+            from interfaces.api.server import app as api_app
+            import uvicorn
+            uvicorn.run(api_app, host=config.api_host, port=config.api_port, log_level="info")
+        else:
+            typer.echo("💻 تشغيل وضع CLI التفاعلي...")
+            asyncio.run(DesktopCLIMode(config, processor).start())
+
+    elif config.mode == "hybrid":
+        typer.echo("🔄 تشغيل الوضع الهجين (Telegram + Desktop)...")
+        asyncio.run(HybridMode(config, processor).start())
+
+    else:
+        typer.echo(f"❌ وضع غير معروف: {config.mode}")
+        raise typer.Exit(1)
+
+
+@app.command(name="telegram")
+def telegram_cmd() -> None:
+    """تشغيل وضع التلجرام فقط (رابط بين الهاتف和桌面)."""
+    config = load_config()
+
+    if not config.bot_token:
+        typer.echo("❌ TELEGRAM_BOT_TOKEN غير مضبوط في .env")
+        typer.echo("   احصل على التوكن من @BotFather على التلجرام")
+        typer.echo("   ثم أضفه إلى .env: TELEGRAM_BOT_TOKEN=xxx")
+        raise typer.Exit(1)
+
+    typer.echo(f"\n📱 OSS Work — Telegram Mode")
+    typer.echo(f"   التوكن: {config.bot_token[:20]}...")
+    typer.echo(f"   المستخدم: {config.bot_username or '@unknown'}")
+    typer.echo(f"   المحاكاة: {'ON' if config.simulation_only else 'OFF'}")
+    typer.echo()
+
+    processor = TaskProcessor(config)
+    from interfaces.telegram.bot import OSSWorkTelegramBot, BotConfig
+    bot_cfg = BotConfig(token=config.bot_token, simulation_only=config.simulation_only)
+    bot = OSSWorkTelegramBot(config=bot_cfg, processor=processor)
+    bot.setup()
+    asyncio.run(bot.run())
+
+
+@app.command(name="desktop")
+def desktop_cmd() -> None:
+    """تشغيل وضع桌面 فقط (بدون تلجرام)."""
+    config = load_config()
+    processor = TaskProcessor(config)
+
+    typer.echo(f"\n💻 OSS Work — Desktop Mode")
+    typer.echo(f"   الوضع: {config.desktop_mode}")
+    typer.echo(f"   المحاكاة: {'ON' if config.simulation_only else 'OFF'}")
+    typer.echo()
+
+    if config.api_enabled:
+        typer.echo(f"   API URL: http://{config.api_host}:{config.api_port}")
+        typer.echo(f"   Docs: http://{config.api_host}:{config.api_port}/docs")
+        typer.echo()
+        from interfaces.api.server import app as api_app
+        import uvicorn
+        uvicorn.run(api_app, host=config.api_host, port=config.api_port, log_level="info")
+    else:
+        asyncio.run(DesktopCLIMode(config, processor).start())
+
+
+@app.command(name="chat")
+def chat_cmd(
+    task: str = typer.Argument(..., help="المهمة المراد معالجتها"),
+    user: str = typer.Option("local", "--user", "-u", help="معرف المستخدم"),
+) -> None:
+    """معالجة مهمة عبر CLI (وضع桌面 المستقل)."""
+    typer.echo(f"\n🤖 معالجة: {task}")
+    typer.echo("---")
+
+    processor = _get_processor()
+    result = _run_async(processor.process(task, user))
+
+    status = result.get("status", "unknown")
+    data = result.get("data", {})
+    errors = result.get("errors", [])
+
+    if status == "completed":
+        typer.echo("\n✅ *تم بنجاح:*")
+        if data:
+            for k, v in data.items():
+                key = k.replace("_", " ")
+                val = str(v)
+                if len(val) > 300:
+                    val = val[:300] + "..."
+                typer.echo(f"   {key}: {val}")
+        else:
+            typer.echo("   لا توجد بيانات.")
+    elif status == "failed":
+        typer.echo(f"\n❌ فشل: {errors[0] if errors else 'خطأ غير معروف'}")
+    elif status == "busy":
+        typer.echo(f"\n⏳ مشغول: {result.get('error', 'مهمة قيد المعالجة')}")
+    else:
+        typer.echo(f"\n📋 النتيجة:")
+        typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+
+    typer.echo()
+
 
 @app.command(name="status")
 def status_cmd() -> None:
-    """Show OSS Work system status."""
-    typer.echo("=== OSS Work Status ===")
+    """عرض حالة نظام OSS Work."""
+    typer.echo("\n=== OSS Work Status ===")
     typer.echo(f"Version: {VERSION}")
     typer.echo(f"Environment: {os.getenv('ENVIRONMENT', 'development')}")
     typer.echo(f"Simulation Mode: {os.getenv('OSS_WORK_SIMULATION_ONLY', '1')}")
 
+    config = load_config()
+    typer.echo(f"\n--- Configuration ---")
+    typer.echo(f"Mode: {config.mode}")
+    typer.echo(f"Telegram: {'✅ Enabled' if config.telegram_enabled and config.bot_token else '❌ Not configured'}")
+    typer.echo(f"Desktop: {config.desktop_mode} ({'API' if config.api_enabled else 'CLI'})")
+    if config.api_enabled:
+        typer.echo(f"API URL: http://{config.api_host}:{config.api_port}")
+
     data_dir = _get_data_dir()
     typer.echo(f"Data Directory: {data_dir}")
 
-    # Check dependencies
     checks = {
         "Playwright": _check_import("playwright"),
         "httpx": _check_import("httpx"),
@@ -104,52 +244,11 @@ def _check_import(module_name: str) -> bool:
         return False
 
 
-# ── Chat ───────────────────────────────────────────────────────
-
-@app.command(name="chat")
-def chat_cmd(
-    task: str = typer.Argument(..., help="Task to execute"),
-    user: str = typer.Option("local", "--user", "-u", help="User ID"),
-    model: str = typer.Option(None, "--model", "-m", help="Specific model to use"),
-) -> None:
-    """Execute a task through OSS Work."""
-    typer.echo(f"\n🤖 Processing: {task}")
-    typer.echo("---")
-
-    # Use imagination engine for thought completion
-    try:
-        engine = UltraIQEngine(max_threads=10, simulation_depth=5)
-        completed = engine.complete_thought(task, {"user_id": user})
-        typer.echo(f"💭 Completed thought: {completed}")
-    except Exception as e:
-        typer.echo(f"⚠️ Thought completion skipped: {e}")
-        completed = task
-
-    # Route through model router
-    try:
-        router = get_router()
-        result = _run_async(
-            router.complete(completed, {"max_tokens": 2000, "temperature": 0.7}, model)
-        )
-
-        if result["status"] == "completed":
-            typer.echo(f"\n✅ Response from {result['model']} ({result['provider']}):")
-            typer.echo(f"\n{result['response']}")
-            typer.echo(f"\n--- {result['latency_ms']}ms via {result['route']} ---")
-        else:
-            typer.echo(f"\n❌ Failed: {result.get('error', 'Unknown error')}")
-    except Exception as e:
-        typer.echo(f"\n❌ Error: {e}")
-        typer.echo("Tip: Set up API keys or use simulation mode.")
-
-
-# ── Models ─────────────────────────────────────────────────────
-
 @app.command(name="models")
 def models_cmd() -> None:
-    """List available AI models."""
+    """عرض النماذج المتاحة للخدمة."""
     router = get_router()
-    typer.echo(f"=== Available Models ({len(router._model_map)}) ===\n")
+    typer.echo(f"\n=== Available Models ({len(router._model_map)}) ===\n")
 
     by_provider: dict[str, list] = {}
     for model in router._model_map.values():
@@ -167,58 +266,14 @@ def models_cmd() -> None:
         typer.echo()
 
 
-# ── Test ───────────────────────────────────────────────────────
-
-@app.command(name="test")
-def test_cmd(
-    module: str = typer.Option("all", "--module", "-m", help="Test module: all, imagination, agents, services"),
-) -> None:
-    """Run OSS Work tests."""
-    typer.echo("Running OSS Work tests...\n")
-
-    if module == "all":
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short"],
-            cwd=os.getcwd(),
-        )
-        sys.exit(result.returncode)
-    elif module == "imagination":
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests/test_imagination.py", "-v"],
-            cwd=os.getcwd(),
-        )
-        sys.exit(result.returncode)
-    elif module == "agents":
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests/test_runtime.py", "tests/test_safety.py", "-v"],
-            cwd=os.getcwd(),
-        )
-        sys.exit(result.returncode)
-    elif module == "services":
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests/test_telemetry.py", "-v"],
-            cwd=os.getcwd(),
-        )
-        sys.exit(result.returncode)
-    else:
-        typer.echo(f"Unknown module: {module}")
-
-
-# ── Imagination ───────────────────────────────────────────────
-
 @app.command(name="imagine")
 def imagine_cmd(
-    task: str = typer.Argument(..., help="Task to imagine solutions for"),
-    threads: int = typer.Option(50, "--threads", "-t", help="Max parallel threads"),
-    depth: int = typer.Option(20, "--depth", "-d", help="Simulation depth"),
-    arabic: bool = typer.Option(False, "--arabic", "-a", help="Arabic response"),
+    task: str = typer.Argument(..., help="مهمة لإنشاء حلول"),
+    threads: int = typer.Option(50, "--threads", "-t", help="أقصى عدد خيوط"),
+    depth: int = typer.Option(20, "--depth", "-d", help="عمق المحاكاة"),
 ) -> None:
-    """Run Ultra IQ Imagination Engine on a task."""
-    typer.echo(f"\n🧠 Imagining solutions for: {task}")
+    """تشغيل محرك Ultra IQ الخيال على مهمة."""
+    typer.echo(f"\n🧠 إنشاء حلول لـ: {task}")
     typer.echo(f"Threads: {threads}, Depth: {depth}")
     typer.echo("---")
 
@@ -244,81 +299,221 @@ def imagine_cmd(
             typer.echo(f"  • {bridge}")
 
 
-# ── Skill ──────────────────────────────────────────────────────
-
 @app.command(name="skill")
 def skill_cmd(
-    capability: str = typer.Argument(..., help="Capability to acquire (e.g., browser_automation)"),
-    install: bool = typer.Option(True, "--install/--no-install", help="Install after finding"),
+    capability: str = typer.Argument(..., help="المهارة المراد اكتسابها"),
+    install: bool = typer.Option(True, "--install/--no-install", help="تثبيت بعد العثور"),
 ) -> None:
-    """Search and install a skill."""
+    """البحث وتثبيت مهارة."""
     downloader = get_skill_downloader()
 
-    typer.echo(f"🔍 Searching for skill: {capability}")
+    typer.echo(f"\n🔍 البحث عن مهارة: {capability}")
 
-    # List installed skills first
     installed = downloader.list_installed()
     if installed:
-        typer.echo("\n--- Installed Skills ---")
+        typer.echo("\n--- المهارات المثبتة ---")
         for skill in installed:
             typer.echo(f"  • {skill.name} ({skill.source}) — {skill.capability}")
 
     if not install:
-        typer.echo("\nSearch only — not installing.")
+        typer.echo("\nالبحث فقط — لا تثبيت.")
         return
 
-    typer.echo("\nAttempting acquisition...")
+    typer.echo("\nمحاولة الاكتساب...")
     result = _run_async(downloader.acquire_skill(capability))
 
     if result.status == "installed":
-        typer.echo(f"\n✅ Installed: {result.name} at {result.path}")
+        typer.echo(f"\n✅ مثبت: {result.name} at {result.path}")
     elif result.status == "already_installed":
-        typer.echo(f"\nℹ️ Already installed: {result.name}")
+        typer.echo(f"\nℹ️ مثبت بالفعل: {result.name}")
     elif result.status == "not_found":
-        typer.echo(f"\n❌ Not found: {result.error}")
+        typer.echo(f"\n❌ غير موجود: {result.error}")
     elif result.status == "failed":
-        typer.echo(f"\n❌ Failed: {result.error}")
+        typer.echo(f"\n❌ فشل: {result.error}")
 
-
-# ── Update ─────────────────────────────────────────────────────
 
 @app.command(name="update")
-def update_cmd(check_only: bool = typer.Option(False, "--check/--apply", help="Check only or apply update")) -> None:
-    """Check for or apply OSS Work updates."""
+def update_cmd(check_only: bool = typer.Option(False, "--check/--apply", help="فحص فقط أو تطبيق")) -> None:
+    """فحص أو تطبيق تحديثات OSS Work."""
     updater = get_updater()
 
-    typer.echo("Checking for updates...")
+    typer.echo("فحص التحديثات...")
 
     if check_only:
         info = _run_async(updater.get_available_updates())
         if info.get("available"):
-            typer.echo(f"\n✅ Update available: v{info['latest']}")
+            typer.echo(f"\n✅ تحديث متاح: v{info['latest']}")
             typer.echo(f"Current: v{info['current']}")
             typer.echo(f"Release notes: {info.get('release_notes', '')[:200]}")
         else:
-            typer.echo(f"\n✅ Up to date: v{info.get('current', 'unknown')}")
+            typer.echo(f"\n✅ محدث: v{info.get('current', 'unknown')}")
         return
 
     result = _run_async(updater.check_and_update())
-    typer.echo(f"\nUpdate result: {result.status}")
+    typer.echo(f"\nنتيجة التحديث: {result.status}")
     if result.message:
-        typer.echo(f"Message: {result.message}")
+        typer.echo(f"رسالة: {result.message}")
     if result.error:
-        typer.echo(f"Error: {result.error}")
+        typer.echo(f"خطأ: {result.error}")
 
-
-# ── Data Directory ─────────────────────────────────────────────
 
 @app.command(name="data-dir")
 def data_dir_cmd() -> None:
-    """Show OSS Work data directory."""
+    """عرض دليل بيانات OSS Work."""
     typer.echo(str(_get_data_dir()))
 
 
-# ── Entry Point ─────────────────────────────────────────────────
+# ── Modes (internal) ────────────────────────────────────────────
+
+class DesktopCLIMode:
+    """وضع CLI التفاعلي على桌面."""
+
+    def __init__(self, config: AgentConfig, processor: TaskProcessor):
+        self.config = config
+        self.processor = processor
+
+    async def start(self) -> None:
+        """تشغيل وضع CLI التفاعلي."""
+        typer.echo()
+        typer.echo("═" * 60)
+        typer.echo("  OSS Work — Desktop CLI Mode (Standalone Agent)")
+        typer.echo("═" * 60)
+        typer.echo()
+        typer.echo("  اكتب مهمة واضغط Enter لمعالجتها")
+        typer.echo("  هذا يعمل مثل أي نموذج ذكاء اصطناعي آخر")
+        typer.echo()
+        typer.echo("  أوامر مساعدة:")
+        typer.echo("    status     — عرض حالة الوكيل")
+        typer.echo("    clear      — مسح السجل")
+        typer.echo("    models     — عرض النماذج المتاحة")
+        typer.echo("    quit / exit — خروج")
+        typer.echo()
+
+        while True:
+            try:
+                task = input("📝 المهمة: ").strip()
+            except (EOFError, KeyboardInterrupt):
+                typer.echo("\n👋 Goodbye!")
+                break
+
+            if not task:
+                continue
+
+            if task.lower() in ("quit", "exit", "خروج", " exit"):
+                typer.echo("👋 Goodbye!")
+                break
+
+            if task.lower() == "status":
+                status = self.processor.get_status()
+                typer.echo("\n📊 الحالة:")
+                for k, v in status.items():
+                    typer.echo(f"   {k}: {v}")
+                typer.echo()
+                continue
+
+            if task.lower() == "clear":
+                self.processor.reset()
+                typer.echo("✅ السجل تم مسحه")
+                typer.echo()
+                continue
+
+            if task.lower() == "models":
+                try:
+                    router = get_router()
+                    typer.echo("\n🤖 النماذج المتاحة:")
+                    for m in router._model_map.values():
+                        typer.echo(f"   • {m.name} ({m.provider.value})")
+                        typer.echo(f"     المجال: {m.category}")
+                        if m.browser_url:
+                            typer.echo(f"     الرابط: {m.browser_url}")
+                        typer.echo()
+                except Exception as e:
+                    typer.echo(f"❌ خطأ: {e}")
+                typer.echo()
+                continue
+
+            typer.echo("⏳ جاري المعالجة...")
+            result = await self.processor.process(task)
+
+            status = result.get("status", "unknown")
+            if status == "completed":
+                data = result.get("data", {})
+                typer.echo("\n✅ *تم بنجاح:*")
+                if data:
+                    for k, v in data.items():
+                        key = k.replace("_", " ")
+                        val = str(v)
+                        if len(val) > 300:
+                            val = val[:300] + "..."
+                        typer.echo(f"   {key}: {val}")
+                    typer.echo()
+                else:
+                    typer.echo("   لا توجد بيانات.")
+                    typer.echo()
+            elif status == "failed":
+                errors = result.get("errors", [])
+                typer.echo(f"\n❌ فشل: {errors[0] if errors else 'خطأ غير معروف'}")
+                typer.echo()
+            elif status == "busy":
+                typer.echo(f"\n⏳ مشغول: {result.get('error', 'مهمة قيد المعالجة')}")
+                typer.echo()
+            else:
+                typer.echo(f"\n📋 النتيجة:")
+                typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
+                typer.echo()
+
+
+class HybridMode:
+    """تشغيل التلجرام و桌面 معًا."""
+
+    def __init__(self, config: AgentConfig, processor: TaskProcessor):
+        self.config = config
+        self.processor = processor
+
+    async def start(self) -> None:
+        """تشغيل الوضع الهجين."""
+        typer.echo()
+        typer.echo("═" * 60)
+        typer.echo("  OSS Work — Hybrid Mode (Telegram + Desktop)")
+        typer.echo("═" * 60)
+        typer.echo()
+
+        tasks = []
+
+        if self.config.telegram_enabled and self.config.bot_token:
+            from interfaces.telegram.bot import OSSWorkTelegramBot, BotConfig
+            bot_cfg = BotConfig(token=self.config.bot_token, simulation_only=self.config.simulation_only)
+            bot = OSSWorkTelegramBot(config=bot_cfg, processor=self.processor)
+            bot.setup()
+            typer.echo("📱 التلجرام: نشط")
+            tasks.append(bot.run())
+        else:
+            typer.echo("📱 التلجرام: غير مضبوط")
+
+        if self.config.desktop_mode == "api":
+            from interfaces.api.server import app as api_app
+            import uvicorn
+            typer.echo(f"🌐桌面 API: http://{self.config.api_host}:{self.config.api_port}")
+            tasks.append(uvicorn.run(api_app, host=self.config.api_host, port=self.config.api_port, log_level="info"))
+        else:
+            typer.echo("💻桌面 CLI: نشط")
+            typer.echo("   (استخدم 'oss-work desktop' لبدء桌面 منفصل)")
+
+        typer.echo()
+        typer.echo("═" * 60)
+        typer.echo()
+
+        if not tasks:
+            typer.echo("❌ لا يوجد وضع مضبوط.")
+            raise typer.Exit(1)
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+# ── Entry Point ──────────────────────────────────────────────────
 
 def main() -> None:
-    """CLI entry point."""
+    """نقطة دخول CLI."""
     app()
 
 

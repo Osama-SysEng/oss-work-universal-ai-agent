@@ -75,10 +75,11 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
 أرسل *وثيقة* وسأقرأ محتواها وأعمل عليها.
 """
 
-    def __init__(self, config: BotConfig | None = None) -> None:
+    def __init__(self, config: BotConfig | None = None, processor=None) -> None:
         self.config = config or BotConfig()
         self.application: Application | None = None
-        self.orchestrator = OrchestratorAgent()
+        self.processor = processor  # Shared TaskProcessor (from core.runtime)
+        self.orchestrator = OrchestratorAgent() if processor is None else None
         self._history: dict[str, list[dict]] = {}
         self._busy: set[str] = set()
 
@@ -179,9 +180,15 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
             if len(task) < 2:
                 await msg.reply_text("الرسالة قصيرة جدًا.")
                 return
-            completed = await self._complete_thought(task, uid)
-            request = TaskRequest.create(task=completed, user_id=uid)
-            result = self.orchestrator.execute(request)
+
+            # Use shared processor if available, otherwise use orchestrator
+            if self.processor:
+                result = await self.processor.process(task, uid)
+            else:
+                completed = await self._complete_thought(task, uid)
+                request = TaskRequest.create(task=completed, user_id=uid)
+                result = self.orchestrator.execute(request)
+
             text, kb = self._format(result)
             await msg.reply_text(text, parse_mode="Markdown", reply_markup=kb)
             await self._log(uid, "task", task[:100], result.get("status", ""))

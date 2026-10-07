@@ -805,11 +805,11 @@ class UltraIQEngine:
                     "domains_used": [t.domain for t in []],  # Would need to pass threads
                 },
             }
-            # Atomic write
+            # Atomic write (utf-8: session data contains Arabic/unicode)
             temp_file = memory_file.with_suffix(".tmp")
-            temp_file.write_text(json.dumps(session_data, indent=2, ensure_ascii=False))
+            temp_file.write_text(json.dumps(session_data, indent=2, ensure_ascii=False), encoding="utf-8")
             temp_file.rename(memory_file)
-        except OSError:
+        except (OSError, UnicodeError):
             pass  # Non-fatal — session persistence is best-effort
 
     # ── BATCH PROCESSING ───────────────────────────────────

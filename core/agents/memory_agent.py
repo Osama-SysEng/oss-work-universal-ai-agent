@@ -18,7 +18,7 @@ class MemoryAgent(BaseAgent):
 
     def __init__(self, description: str = "", context: dict[str, Any] | None = None, **kwargs: Any) -> None:
         super().__init__("memory", name="MemoryAgent", description=description, context=context, **kwargs)
-        self.db_path = Path(self.context.get("db_path", DATA_DIR / "memory.sqlite3")).expanduser().resolve()
+        self.db_path = Path(self.context.get("db_path", Path(DATA_DIR) / "memory.sqlite3")).expanduser().resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.db_path) as db:
             db.execute("PRAGMA journal_mode=WAL")

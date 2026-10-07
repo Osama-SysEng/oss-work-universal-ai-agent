@@ -68,6 +68,13 @@ class AgentConfig:
     allow_browser: bool = False
     allow_external: bool = False
 
+    # ── JEV / TypeSafe AI ──
+    use_jev: bool = False           # تفعيل نموذج JEV للتصنيف والترتيب
+    jev_api_key: str | None = None  # مفتاح API من TypeSafe (ts_...)
+    jev_base_url: str = "https://api.typesafe.ai/v1"
+    jev_model: str = "jev-latest"   # 'jev-latest' | 'jev-1.13.0' | ...
+    jev_timeout: int = 30           # ثواني
+
     # ── Logging ──
     log_level: str = "INFO"
     log_to_file: bool = False
@@ -233,6 +240,15 @@ OSS_ALLOW_FILE_OPS=false
 OSS_ALLOW_CODE_EXEC=false
 OSS_ALLOW_BROWSER=false
 OSS_ALLOW_EXTERNAL=false
+
+# ═══════════════════════════════════════════════════════════════════
+# JEV / TypeSafe AI
+# ═══════════════════════════════════════════════════════════════════
+# https://typesafe.ai — نموذج System One للتصنيف والترتيب
+# احصل على المفتاح من: https://console.typesafe.ai
+TYPESAFE_API_KEY=              # ts_... — اتركه فارغًا إذا لم تكن متصلًا بـ JEV
+OSS_USE_JEV=false              # true = تفعيل JEV للتصنيف والترتيب
+OSS_JEV_MODEL=jev-latest       # jev-latest | jev-1.13.0 | ...
 
 # ═══════════════════════════════════════════════════════════════════
 # LOGGING

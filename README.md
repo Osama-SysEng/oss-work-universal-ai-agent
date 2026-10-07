@@ -282,3 +282,8 @@ Apache-2.0 — see [LICENSE](./LICENSE) for details.
 - **Email**: ososama7979@gmail.com
 
 _Built with imagination by Osama Mohamed Fathy, Cairo Egypt._
+
+## What's New (Oct 2026)
+- Live PostgreSQL (10 tables; TimescaleDB hypertables need a Timescale server)
+- ~110 tests collected, 0 errors
+- Interactive 3D showcase: open `web-3d/index.html` (Three.js, animated, mouse-reactive)

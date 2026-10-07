@@ -28,7 +28,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+import logging
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -38,9 +39,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from core.config import load_config
 from core.processor import TaskProcessor, get_processor
 
-
 # ═══════════════════════════════════════════════════════════════════
-# Pydantic Models
+# FastAPI App
 # ═══════════════════════════════════════════════════════════════════
 
 class TaskRequest(BaseModel):
@@ -132,10 +132,19 @@ print(result["data"]["solution"])
     redoc_url="/redoc",
 )
 
+logger = logging.getLogger("oss-work-api")
 
 # ═══════════════════════════════════════════════════════════════════
 # Endpoints
 # ═══════════════════════════════════════════════════════════════════
+
+# JEV routes — TypeSafe AI System One Model
+try:
+    from interfaces.api.jev_routes import router as jev_router
+    app.include_router(jev_router)
+    logger.info("JEV routes loaded")
+except ImportError:
+    logger.debug("JEV routes not available")
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -148,10 +157,9 @@ async def health_check():
 
 
 @app.get("/status", response_model=StatusResponse)
-async def get_status(processor: TaskProcessor = None):
+async def get_status():
     """حالة الوكيل والإحصائيات."""
-    if processor is None:
-        processor = get_processor()
+    processor = get_processor()
     status = processor.get_status()
     return StatusResponse(
         version=status["version"],
@@ -167,7 +175,6 @@ async def get_status(processor: TaskProcessor = None):
 @app.post("/task", response_model=TaskResponse)
 async def submit_task(
     request: TaskRequest,
-    processor: TaskProcessor = None,
 ):
     """
     إرسال مهمة للوكيل.
@@ -180,8 +187,7 @@ async def submit_task(
     2. المنسق — يوجّه عبر عوامل代理 متخصصة
     3. موجه النماذج — يستخدم 100+ نماذج ذكاء اصطناعي مجانية إذا لزم
     """
-    if processor is None:
-        processor = get_processor()
+    processor = get_processor()
 
     if not request.task or len(request.task.strip()) < 2:
         raise HTTPException(400, "المهمة يجب أن تكون 2 حرف على الأقل")

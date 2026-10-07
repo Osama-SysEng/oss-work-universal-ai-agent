@@ -17,3 +17,9 @@ web/.next/
 *.log
 .DS_Store
 deploy/secrets/
+
+# added by light repair
+web/out/
+out/
+node_modules/
+.next/

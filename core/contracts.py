@@ -7,6 +7,13 @@ from typing import Any
 from uuid import uuid4
 
 
+VERSION = "0.3.0"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Contracts
+# ═══════════════════════════════════════════════════════════════════
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

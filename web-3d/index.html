@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSS Work — No-Setup AI Agent | 3D Showcase</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI',Tahoma,sans-serif; background:#05070f; color:#fff; overflow-x:hidden; }
+  #scene { position:fixed; inset:0; z-index:0; }
+  .content { position:relative; z-index:1; min-height:100vh; display:flex; flex-direction:column;
+             align-items:center; justify-content:center; text-align:center; padding:2rem; pointer-events:none; }
+  .badge { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.2); border-radius:999px;
+            padding:.4rem 1.2rem; font-size:.85rem; margin-bottom:1rem; backdrop-filter:blur(8px); }
+  h1 { font-size:clamp(2.5rem,8vw,5rem); font-weight:900;
+        background:linear-gradient(135deg,#06b6d4,#8b5cf6); -webkit-background-clip:text; background-clip:text; color:transparent;
+        filter:drop-shadow(0 0 30px #06b6d466); animation:float 4s ease-in-out infinite; }
+  @keyframes float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-12px); } }
+  .en { color:#94a3b8; letter-spacing:3px; margin:.5rem 0 1rem; font-size:clamp(.8rem,2vw,1.1rem); }
+  p.desc { max-width:640px; color:#cbd5e1; line-height:2; margin-bottom:2rem; }
+  .stats { display:flex; gap:1rem; flex-wrap:wrap; justify-content:center; pointer-events:auto; }
+  .card { background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.15); border-radius:16px;
+           padding:1.2rem 2rem; min-width:140px; backdrop-filter:blur(10px); transition:transform .3s; }
+  .card:hover { transform:translateY(-6px) scale(1.03); border-color:#06b6d4; }
+  .card b { display:block; font-size:1.8rem; color:#06b6d4; }
+  .card span { font-size:.8rem; color:#94a3b8; }
+  .links { margin-top:2rem; display:flex; gap:1rem; pointer-events:auto; }
+  .links a { color:#fff; text-decoration:none; border:1px solid #06b6d4; border-radius:999px; padding:.6rem 1.6rem;
+              transition:.3s; }
+  .links a:hover { background:#06b6d4; color:#000; box-shadow:0 0 25px #06b6d4; }
+  .hint { position:fixed; bottom:12px; width:100%; text-align:center; z-index:1; color:#475569; font-size:.75rem; }
+  @media (prefers-reduced-motion:reduce) { h1 { animation:none; } }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div class="content">
+  <div class="badge">عرض ثلاثي الأبعاد حي — WebGL</div>
+  <h1>OSS Work</h1>
+  <div class="en">No-Setup AI Agent</div>
+  <p class="desc">وكيل AI موحد بلا إعداد — محرك UltraIQ، ذاكرة دائمة عبر Telegram.</p>
+  <div class="stats">
+    <div class="card"><b>10</b><span>جداول PostgreSQL</span></div>
+    <div class="card"><b>110</b><span>اختبار مُجمّع</span></div>
+    <div class="card"><b>Next.js</b><span>واجهة ويب</span></div>
+  </div>
+  <div class="links">
+    <a href="../README.md">التوثيق</a>
+    <a href="https://github.com/Osama-SysEng">GitHub</a>
+  </div>
+</div>
+<div class="hint">حرّك الفأرة — المشهد يتفاعل معك | يعمل أونلاين (Three.js CDN)</div>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+try {
+  const canvas = document.getElementById('scene');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, .1, 100);
+  camera.position.z = 7;
+  const g = new THREE.Group(); scene.add(g);
+  const mat1 = new THREE.MeshStandardMaterial({ color:'#06b6d4', wireframe:true });
+  const mat2 = new THREE.MeshStandardMaterial({ color:'#8b5cf6', wireframe:true, transparent:true, opacity:.5 });
+  const main = new THREE.Mesh(new THREE.OctahedronGeometry(1.8, 1), mat1); g.add(main);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(3, .04, 12, 90), mat2);
+  ring.rotation.x = Math.PI/2.5; g.add(ring);
+  const pGeo = new THREE.BufferGeometry();
+  const N = 500, pos = new Float32Array(N*3);
+  for (let i=0;i<N*3;i++) pos[i] = (Math.random()-.5)*16;
+  pGeo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const stars = new THREE.Points(pGeo, new THREE.PointsMaterial({ color:0xffffff, size:.03, transparent:true, opacity:.7 }));
+  scene.add(stars);
+  scene.add(new THREE.AmbientLight(0xffffff,.4));
+  const l1 = new THREE.PointLight('#06b6d4', 60); l1.position.set(4,3,4); scene.add(l1);
+  const l2 = new THREE.PointLight('#8b5cf6', 60); l2.position.set(-4,-3,4); scene.add(l2);
+  let mx=0,my=0;
+  addEventListener('pointermove', e=>{ mx=(e.clientX/innerWidth-.5); my=(e.clientY/innerHeight-.5); });
+  const reduce = matchMedia('(prefers-reduced-motion:reduce)').matches;
+  (function tick(t){
+    requestAnimationFrame(tick);
+    if(!reduce){
+      main.rotation.x = t*.0002; main.rotation.y = t*.0003;
+      ring.rotation.z = t*.0001; stars.rotation.y = t*.00002;
+      g.rotation.y += ((mx*.8)-g.rotation.y)*.04;
+      g.rotation.x += ((my*.8)-g.rotation.x)*.04;
+    }
+    renderer.render(scene,camera);
+  })(0);
+  addEventListener('resize', ()=>{
+    camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+} catch(e) {
+  document.querySelector('.hint').textContent = 'تعذر تحميل WebGL — تحقق من الاتصال (Three.js CDN)';
+}
+</script>
+</body>
+</html>

@@ -48,6 +48,18 @@ class TaskProcessor:
         )
         self._history: dict[str, list[dict]] = {}
         self._busy: set[str] = set()
+        
+        # JEV client (إذا تم تفعيله)
+        self.jev_client = None
+        if self.config.use_jev and self.config.jev_api_key:
+            try:
+                from core.jev_client import JEVClient
+                self.jev_client = JEVClient(
+                    api_key=self.config.jev_api_key,
+                    base_url=self.config.jev_base_url
+                )
+            except ImportError:
+                pass
         self._task_counter: int = 0
         self._started_at: float = time.time()
 
@@ -74,7 +86,10 @@ class TaskProcessor:
 
             # المرحلة 1: imagination — يكتمل/يوسع الفكر
             completed = await self._complete_thought(task, user_id)
-
+            
+            # المرحلة 1.5: JEV routing (إذا متاح)
+            jev_info = await self._jev_route(completed)
+            
             # المرحلة 2: orchestrator — يوجّه عبر عوامل代理 متخصصة
             # ملاحظة: OrchestratorAgent يقرأ self.task من الإنشاء
             orchestrator = OrchestratorAgent(task=completed, context={"user_id": user_id})
@@ -94,7 +109,9 @@ class TaskProcessor:
             result["task_id"] = task_id
             result["latency_ms"] = round(elapsed, 1)
             result["mode"] = self.config.mode
-
+            if jev_info:
+                result["jev_routing"] = jev_info
+            
             return result
 
         except Exception as e:
@@ -118,6 +135,45 @@ class TaskProcessor:
         ]
 
     # ── Internal ──────────────────────────────────────────────────
+
+    async def _jev_route(self, task: str) -> dict:
+        """
+        استخدام JEV لتوجيه المهمة - يعيد إضافات إلى result dict.
+        إذا لم يكن JEV متاحًا، يعيد dict فارغ.
+        """
+        if not self.jev_client:
+            return {}
+        try:
+            from core.jev_client import TASK_ROUTER_CRITERIA
+            # توجيه سريع
+            route_result = self.jev_client.route_task(
+                task_type="task",
+                task_description=task,
+                criteria=TASK_ROUTER_CRITERIA
+            )
+            # جلب الاحتمالات الكاملة
+            full = self.jev_client.decide_sync(
+                state=task,
+                questions={
+                    "route": {
+                        "type": "choice",
+                        "instructions": "أي فئة تناسب هذا الطلب؟",
+                        "criteria": TASK_ROUTER_CRITERIA
+                    }
+                }
+            )
+            probs = {}
+            for d in full.decisions:
+                if d.question_name == "route" and d.probabilities:
+                    probs = d.probabilities
+            return {
+                "jev_routed_to": route_result,
+                "jev_confidence": max(probs.values()) if probs else 0.0,
+                "jev_probabilities": probs
+            }
+        except Exception as e:
+            logger.debug(f"JEV routing failed: {e}")
+            return {}
 
     async def _complete_thought(self, task: str, uid: str) -> str:
         """استخدام محرك الخيال لإنشاء الفكر."""

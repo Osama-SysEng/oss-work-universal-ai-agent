@@ -25,11 +25,12 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import logging
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -38,6 +39,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from core.config import load_config
 from core.processor import TaskProcessor, get_processor
+from core.rate_limit import RateLimiter
+
+
+def _rate_limit_from_env() -> tuple[int, float]:
+    try:
+        limit = int(os.getenv("OSS_RATE_LIMIT", "60") or 60)
+    except (TypeError, ValueError):
+        limit = 60
+    try:
+        window = float(os.getenv("OSS_RATE_WINDOW", "60") or 60)
+    except (TypeError, ValueError):
+        window = 60.0
+    return max(1, limit), max(1.0, window)
+
+
+_rate_limiter = RateLimiter(*_rate_limit_from_env())
 
 # ═══════════════════════════════════════════════════════════════════
 # FastAPI App
@@ -175,6 +192,7 @@ async def get_status():
 @app.post("/task", response_model=TaskResponse)
 async def submit_task(
     request: TaskRequest,
+    http_request: Request,
 ):
     """
     إرسال مهمة للوكيل.
@@ -187,6 +205,15 @@ async def submit_task(
     2. المنسق — يوجّه عبر عوامل代理 متخصصة
     3. موجه النماذج — يستخدم 100+ نماذج ذكاء اصطناعي مجانية إذا لزم
     """
+    client_key = request.user_id or "local"
+    try:
+        if http_request.client is not None:
+            client_key = f"{request.user_id}:{http_request.client.host}"
+    except Exception:
+        pass
+    if not _rate_limiter.allow(client_key):
+        raise HTTPException(429, "تجاوزت حد المعدل — حاول لاحقًا")
+
     processor = get_processor()
 
     if not request.task or len(request.task.strip()) < 2:

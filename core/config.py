@@ -132,6 +132,12 @@ def _load_from_env_file(config: AgentConfig, path: Path) -> None:
     except ImportError:
         pass
 
+    def _int(name: str, default: int) -> int:
+        try:
+            return int(os.getenv(name, str(default)) or default)
+        except (TypeError, ValueError):
+            return default
+
     # Mode
     mode = os.getenv("OSS_WORK_MODE", "").strip()
     if mode:
@@ -148,20 +154,21 @@ def _load_from_env_file(config: AgentConfig, path: Path) -> None:
         config.desktop_mode = dm
     config.api_enabled = os.getenv("OSS_API_ENABLED", "true").lower() == "true"
     config.api_host = os.getenv("OSS_API_HOST", "127.0.0.1")
-    config.api_port = int(os.getenv("OSS_API_PORT", "8080") or 8080)
+    config.api_port = _int("OSS_API_PORT", 8080)
 
     # Data
     config.data_dir = os.getenv("OSS_WORK_DATA_DIR", config.data_dir)
     config.db_path = os.getenv("OSS_WORK_DB_PATH", config.db_path)
+    config.allowed_root = os.getenv("OSS_WORK_ALLOWED_ROOT", config.allowed_root)
 
     # Simulation
     config.simulation_only = os.getenv("OSS_WORK_SIMULATION_ONLY", "1") == "1"
     config.approved_actions = os.getenv("OSS_APPROVED_ACTIONS", "").lower() == "true"
 
     # Agent settings
-    config.max_threads = int(os.getenv("OSS_MAX_THREADS", "1000") or 1000)
+    config.max_threads = _int("OSS_MAX_THREADS", 1000)
     config.invention_enabled = os.getenv("OSS_INVENTION_ENABLED", "true").lower() == "true"
-    config.simulation_depth = int(os.getenv("OSS_SIMULATION_DEPTH", "100") or 100)
+    config.simulation_depth = _int("OSS_SIMULATION_DEPTH", 100)
 
     # Security
     config.allow_file_ops = os.getenv("OSS_ALLOW_FILE_OPS", "false").lower() == "true"
@@ -169,9 +176,17 @@ def _load_from_env_file(config: AgentConfig, path: Path) -> None:
     config.allow_browser = os.getenv("OSS_ALLOW_BROWSER", "false").lower() == "true"
     config.allow_external = os.getenv("OSS_ALLOW_EXTERNAL", "false").lower() == "true"
 
-    # Logging
-    config.log_level = os.getenv("OSS_LOG_LEVEL", "INFO")
+    # JEV / TypeSafe AI
+    config.jev_api_key = os.getenv("TYPESAFE_API_KEY", "").strip() or config.jev_api_key
+    config.use_jev = os.getenv("OSS_USE_JEV", "").lower() == "true" or config.use_jev
+    config.jev_base_url = os.getenv("OSS_JEV_BASE_URL", config.jev_base_url)
+    config.jev_model = os.getenv("OSS_JEV_MODEL", config.jev_model)
+    config.jev_timeout = _int("OSS_JEV_TIMEOUT", config.jev_timeout)
+
+    # Logging (OSS_LOG_LEVEL with OSS_WORK_LOG_LEVEL alias)
+    config.log_level = os.getenv("OSS_LOG_LEVEL", "") or os.getenv("OSS_WORK_LOG_LEVEL", "") or config.log_level
     config.log_to_file = os.getenv("OSS_LOG_TO_FILE", "false").lower() == "true"
+    config.log_dir = os.getenv("OSS_LOG_DIR", config.log_dir)
 
 
 def _load_from_env_vars(config: AgentConfig) -> None:
@@ -249,6 +264,14 @@ OSS_ALLOW_EXTERNAL=false
 TYPESAFE_API_KEY=              # ts_... — اتركه فارغًا إذا لم تكن متصلًا بـ JEV
 OSS_USE_JEV=false              # true = تفعيل JEV للتصنيف والترتيب
 OSS_JEV_MODEL=jev-latest       # jev-latest | jev-1.13.0 | ...
+OSS_JEV_BASE_URL=https://api.typesafe.ai/v1
+OSS_JEV_TIMEOUT=30
+
+# ═══════════════════════════════════════════════════════════════════
+# API RATE LIMIT
+# ═══════════════════════════════════════════════════════════════════
+OSS_RATE_LIMIT=60
+OSS_RATE_WINDOW=60
 
 # ═══════════════════════════════════════════════════════════════════
 # LOGGING

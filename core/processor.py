@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +23,8 @@ from core.config import AgentConfig, load_config, VERSION
 from core.contracts import TaskRequest
 from core.agents.orchestrator import OrchestratorAgent
 from core.imagination.engine import UltraIQEngine
+
+logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════

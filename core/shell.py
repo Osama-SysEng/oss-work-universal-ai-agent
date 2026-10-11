@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Command-line wrapper for the safe OSS-Work runtime."""
 
 from core.main import main

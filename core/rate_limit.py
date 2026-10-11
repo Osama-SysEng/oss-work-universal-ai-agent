@@ -1,4 +1,5 @@
 """Small dependency-free rate limiter; production deployments should use a shared store."""
+
 from __future__ import annotations
 
 import time

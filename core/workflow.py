@@ -10,10 +10,15 @@
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 
 class StepStatus(Enum):
@@ -35,6 +40,7 @@ class WorkflowStatus(Enum):
 @dataclass
 class WorkflowStep:
     """خطوة في سير العمل"""
+
     id: str
     name: str
     description: str | None = None
@@ -60,7 +66,7 @@ class Workflow:
     description: str | None = None
     steps: list[WorkflowStep] = field(default_factory=list)
     status: WorkflowStatus = field(default=WorkflowStatus.CREATED)
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     started_at: str | None = None
     completed_at: str | None = None
     current_step_index: int = 0
@@ -79,9 +85,7 @@ class Workflow:
             if step.status != StepStatus.PENDING:
                 continue
             # التحقق من تبعيات
-            deps_satisfied = all(
-                dep in completed_ids or dep in skipped_ids for dep in step.depends_on
-            )
+            deps_satisfied = all(dep in completed_ids or dep in skipped_ids for dep in step.depends_on)
             if deps_satisfied:
                 pending.append(step)
 
@@ -101,7 +105,7 @@ class Workflow:
             return {"status": "skipped", "reason": "dependencies not satisfied"}
 
         step.status = StepStatus.RUNNING
-        step.started_at = datetime.now(timezone.utc).isoformat()
+        step.started_at = datetime.now(UTC).isoformat()
 
         try:
             if step.action:
@@ -111,13 +115,14 @@ class Workflow:
 
             step.status = StepStatus.COMPLETED
             step.result = result
-            step.completed_at = datetime.now(timezone.utc).isoformat()
+            step.completed_at = datetime.now(UTC).isoformat()
             return {"status": "completed", "result": result}
 
         except Exception as exc:
+            logger.exception("Unhandled exception in workflow.py")
             step.status = StepStatus.FAILED
             step.error = str(exc)
-            step.completed_at = datetime.now(timezone.utc).isoformat()
+            step.completed_at = datetime.now(UTC).isoformat()
             return {"status": "failed", "error": str(exc)}
 
     def execute(self) -> dict[str, Any]:
@@ -126,7 +131,7 @@ class Workflow:
             return {"status": "error", "message": "Workflow cannot be executed in current state"}
 
         self.status = WorkflowStatus.RUNNING
-        self.started_at = datetime.now(timezone.utc).isoformat()
+        self.started_at = datetime.now(UTC).isoformat()
 
         results = []
         while True:
@@ -140,17 +145,17 @@ class Workflow:
 
             if step.status == StepStatus.FAILED:
                 self.status = WorkflowStatus.FAILED
-                self.completed_at = datetime.now(timezone.utc).isoformat()
+                self.completed_at = datetime.now(UTC).isoformat()
                 return {"status": "failed", "results": results, "failed_step": step.id}
 
         self.status = WorkflowStatus.COMPLETED
-        self.completed_at = datetime.now(timezone.utc).isoformat()
+        self.completed_at = datetime.now(UTC).isoformat()
         return {"status": "completed", "results": results}
 
     def cancel(self) -> None:
         """إلغاء سير العمل"""
         self.status = WorkflowStatus.CANCELLED
-        self.completed_at = datetime.now(timezone.utc).isoformat()
+        self.completed_at = datetime.now(UTC).isoformat()
         for step in self.steps:
             if step.status == StepStatus.RUNNING:
                 step.status = StepStatus.SKIPPED

@@ -12,16 +12,12 @@ OSS Work — Shared Task Processor.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
-from core.config import AgentConfig, load_config, VERSION
-from core.contracts import TaskRequest
 from core.agents.orchestrator import OrchestratorAgent
+from core.config import VERSION, AgentConfig, load_config
 from core.imagination.engine import UltraIQEngine
 
 logger = logging.getLogger(__name__)
@@ -30,6 +26,7 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════
 # Task Processor
 # ═══════════════════════════════════════════════════════════════════
+
 
 class TaskProcessor:
     """
@@ -51,16 +48,14 @@ class TaskProcessor:
         )
         self._history: dict[str, list[dict]] = {}
         self._busy: set[str] = set()
-        
+
         # JEV client (إذا تم تفعيله)
         self.jev_client = None
         if self.config.use_jev and self.config.jev_api_key:
             try:
                 from core.jev_client import JEVClient
-                self.jev_client = JEVClient(
-                    api_key=self.config.jev_api_key,
-                    base_url=self.config.jev_base_url
-                )
+
+                self.jev_client = JEVClient(api_key=self.config.jev_api_key, base_url=self.config.jev_base_url)
             except ImportError:
                 pass
         self._task_counter: int = 0
@@ -89,10 +84,10 @@ class TaskProcessor:
 
             # المرحلة 1: imagination — يكتمل/يوسع الفكر
             completed = await self._complete_thought(task, user_id)
-            
+
             # المرحلة 1.5: JEV routing (إذا متاح)
             jev_info = await self._jev_route(completed)
-            
+
             # المرحلة 2: orchestrator — يوجّه عبر عوامل代理 متخصصة
             # ملاحظة: OrchestratorAgent يقرأ self.task من الإنشاء
             orchestrator = OrchestratorAgent(task=completed, context={"user_id": user_id})
@@ -100,24 +95,27 @@ class TaskProcessor:
 
             # المرحلة 3: تسجيل في السجل
             elapsed = (time.monotonic() - started) * 1000
-            self._history.setdefault(user_id, []).append({
-                "task_id": task_id,
-                "task": task[:200],
-                "completed": completed[:200],
-                "status": result.get("status", ""),
-                "latency_ms": round(elapsed, 1),
-                "timestamp": time.time(),
-            })
+            self._history.setdefault(user_id, []).append(
+                {
+                    "task_id": task_id,
+                    "task": task[:200],
+                    "completed": completed[:200],
+                    "status": result.get("status", ""),
+                    "latency_ms": round(elapsed, 1),
+                    "timestamp": time.time(),
+                }
+            )
 
             result["task_id"] = task_id
             result["latency_ms"] = round(elapsed, 1)
             result["mode"] = self.config.mode
             if jev_info:
                 result["jev_routing"] = jev_info
-            
+
             return result
 
         except Exception as e:
+            logger.exception("Unhandled exception in processor.py")
             return {
                 "status": "failed",
                 "errors": [str(e)],
@@ -132,10 +130,7 @@ class TaskProcessor:
             *[self.process(t.get("task", ""), t.get("user_id", "local")) for t in tasks],
             return_exceptions=True,
         )
-        return [
-            r if isinstance(r, dict) else {"status": "failed", "errors": [str(r)]}
-            for r in results
-        ]
+        return [r if isinstance(r, dict) else {"status": "failed", "errors": [str(r)]} for r in results]
 
     # ── Internal ──────────────────────────────────────────────────
 
@@ -148,11 +143,10 @@ class TaskProcessor:
             return {}
         try:
             from core.jev_client import TASK_ROUTER_CRITERIA
+
             # توجيه سريع
             route_result = self.jev_client.route_task(
-                task_type="task",
-                task_description=task,
-                criteria=TASK_ROUTER_CRITERIA
+                task_type="task", task_description=task, criteria=TASK_ROUTER_CRITERIA
             )
             # جلب الاحتمالات الكاملة
             full = self.jev_client.decide_sync(
@@ -161,9 +155,9 @@ class TaskProcessor:
                     "route": {
                         "type": "choice",
                         "instructions": "أي فئة تناسب هذا الطلب؟",
-                        "criteria": TASK_ROUTER_CRITERIA
+                        "criteria": TASK_ROUTER_CRITERIA,
                     }
-                }
+                },
             )
             probs = {}
             for d in full.decisions:
@@ -172,9 +166,9 @@ class TaskProcessor:
             return {
                 "jev_routed_to": route_result,
                 "jev_confidence": max(probs.values()) if probs else 0.0,
-                "jev_probabilities": probs
+                "jev_probabilities": probs,
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - preserve broad catch; logged below
             logger.debug(f"JEV routing failed: {e}")
             return {}
 
@@ -182,7 +176,8 @@ class TaskProcessor:
         """استخدام محرك الخيال لإنشاء الفكر."""
         try:
             return self.imagination.complete_thought(task, {"user_id": uid})
-        except Exception:
+        except Exception as _exc:
+            logger.exception("Unhandled exception in processor.py")
             return task
 
     # ── Status & History ──────────────────────────────────────────

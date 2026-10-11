@@ -16,6 +16,7 @@ from typing import Any
 @dataclass
 class KnowledgeRule:
     """قاعدة معرفية للوكيل"""
+
     id: str
     domain: str
     rule: str
@@ -31,6 +32,7 @@ class KnowledgeRule:
 @dataclass
 class LearningPattern:
     """نمط تعلم للوكيل"""
+
     name: str
     description: str
     steps: list[str]
@@ -247,5 +249,5 @@ class BuiltInKnowledge:
             "rules_count": len(self.kb.rules),
             "patterns_count": len(self.kb.patterns),
             "references_count": len(self.kb.references),
-            "domains": list(set(r.domain for r in self.kb.rules)),
+            "domains": list({r.domain for r in self.kb.rules}),
         }

@@ -14,22 +14,23 @@ OSS Work — CLI Interface.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
 import json
 import os
-import sys
 from pathlib import Path
-from typing import Any
 
 import typer
 
-from core.config import load_config, AgentConfig, VERSION
-from core.processor import TaskProcessor
+from core.config import VERSION, AgentConfig, load_config
 from core.imagination.engine import UltraIQEngine
+from core.processor import TaskProcessor
 from core.services.model_router import get_router
 from core.services.skill_downloader import get_skill_downloader
 from core.services.updater import get_updater
-
 
 # ── CLI App ────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ app = typer.Typer(
 
 
 # ── Helpers ────────────────────────────────────────────────────
+
 
 def _run_async(coro):
     """تشغيل coroutine في سياق متزامن."""
@@ -65,6 +67,7 @@ def _get_processor() -> TaskProcessor:
 
 # ── Commands ────────────────────────────────────────────────────
 
+
 @app.command(name="run")
 def run_cmd() -> None:
     """تشغيل الوكيل بالوضع المضبوط في .env."""
@@ -78,7 +81,8 @@ def run_cmd() -> None:
 
     if config.mode == "telegram":
         typer.echo("📱 تشغيل وضع التلجرام...")
-        from interfaces.telegram.bot import OSSWorkTelegramBot, BotConfig
+        from interfaces.telegram.bot import BotConfig, OSSWorkTelegramBot
+
         bot_cfg = BotConfig(
             token=config.bot_token,
             simulation_only=config.simulation_only,
@@ -93,8 +97,10 @@ def run_cmd() -> None:
             typer.echo(f"   URL: http://{config.api_host}:{config.api_port}")
             typer.echo(f"   Docs: http://{config.api_host}:{config.api_port}/docs")
             typer.echo()
-            from interfaces.api.server import app as api_app
             import uvicorn
+
+            from interfaces.api.server import app as api_app
+
             uvicorn.run(api_app, host=config.api_host, port=config.api_port, log_level="info")
         else:
             typer.echo("💻 تشغيل وضع CLI التفاعلي...")
@@ -120,14 +126,15 @@ def telegram_cmd() -> None:
         typer.echo("   ثم أضفه إلى .env: TELEGRAM_BOT_TOKEN=xxx")
         raise typer.Exit(1)
 
-    typer.echo(f"\n📱 OSS Work — Telegram Mode")
+    typer.echo("\n📱 OSS Work — Telegram Mode")
     typer.echo(f"   التوكن: {config.bot_token[:20]}...")
     typer.echo(f"   المستخدم: {config.bot_username or '@unknown'}")
     typer.echo(f"   المحاكاة: {'ON' if config.simulation_only else 'OFF'}")
     typer.echo()
 
     processor = TaskProcessor(config)
-    from interfaces.telegram.bot import OSSWorkTelegramBot, BotConfig
+    from interfaces.telegram.bot import BotConfig, OSSWorkTelegramBot
+
     bot_cfg = BotConfig(token=config.bot_token, simulation_only=config.simulation_only)
     bot = OSSWorkTelegramBot(config=bot_cfg, processor=processor)
     bot.setup()
@@ -140,7 +147,7 @@ def desktop_cmd() -> None:
     config = load_config()
     processor = TaskProcessor(config)
 
-    typer.echo(f"\n💻 OSS Work — Desktop Mode")
+    typer.echo("\n💻 OSS Work — Desktop Mode")
     typer.echo(f"   الوضع: {config.desktop_mode}")
     typer.echo(f"   المحاكاة: {'ON' if config.simulation_only else 'OFF'}")
     typer.echo()
@@ -149,8 +156,10 @@ def desktop_cmd() -> None:
         typer.echo(f"   API URL: http://{config.api_host}:{config.api_port}")
         typer.echo(f"   Docs: http://{config.api_host}:{config.api_port}/docs")
         typer.echo()
-        from interfaces.api.server import app as api_app
         import uvicorn
+
+        from interfaces.api.server import app as api_app
+
         uvicorn.run(api_app, host=config.api_host, port=config.api_port, log_level="info")
     else:
         asyncio.run(DesktopCLIMode(config, processor).start())
@@ -188,7 +197,7 @@ def chat_cmd(
     elif status == "busy":
         typer.echo(f"\n⏳ مشغول: {result.get('error', 'مهمة قيد المعالجة')}")
     else:
-        typer.echo(f"\n📋 النتيجة:")
+        typer.echo("\n📋 النتيجة:")
         typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
     typer.echo()
@@ -203,7 +212,7 @@ def status_cmd() -> None:
     typer.echo(f"Simulation Mode: {os.getenv('OSS_WORK_SIMULATION_ONLY', '1')}")
 
     config = load_config()
-    typer.echo(f"\n--- Configuration ---")
+    typer.echo("\n--- Configuration ---")
     typer.echo(f"Mode: {config.mode}")
     typer.echo(f"Telegram: {'✅ Enabled' if config.telegram_enabled and config.bot_token else '❌ Not configured'}")
     typer.echo(f"Desktop: {config.desktop_mode} ({'API' if config.api_enabled else 'CLI'})")
@@ -282,19 +291,19 @@ def imagine_cmd(
 
     typer.echo(f"\n✅ Solution (confidence: {result.confidence:.2f}):")
     typer.echo(f"\n{result.solution}")
-    typer.echo(f"\n---")
+    typer.echo("\n---")
     typer.echo(f"Threads explored: {result.threads_explored}")
     typer.echo(f"Invented: {result.invented}")
     typer.echo(f"Simulations: {result.simulation_branches}")
     typer.echo(f"Elapsed: {result.elapsed_ms:.0f}ms")
 
     if result.reasoning_chain:
-        typer.echo(f"\n📋 Reasoning chain:")
+        typer.echo("\n📋 Reasoning chain:")
         for i, step in enumerate(result.reasoning_chain, 1):
             typer.echo(f"  {i}. {step}")
 
     if result.cross_domain_bridges:
-        typer.echo(f"\n🔗 Cross-domain bridges:")
+        typer.echo("\n🔗 Cross-domain bridges:")
         for bridge in result.cross_domain_bridges[:5]:
             typer.echo(f"  • {bridge}")
 
@@ -365,6 +374,7 @@ def data_dir_cmd() -> None:
 
 # ── Modes (internal) ────────────────────────────────────────────
 
+
 class DesktopCLIMode:
     """وضع CLI التفاعلي على桌面."""
 
@@ -428,6 +438,7 @@ class DesktopCLIMode:
                             typer.echo(f"     الرابط: {m.browser_url}")
                         typer.echo()
                 except Exception as e:
+                    logger.exception("Unhandled exception in main.py")
                     typer.echo(f"❌ خطأ: {e}")
                 typer.echo()
                 continue
@@ -458,7 +469,7 @@ class DesktopCLIMode:
                 typer.echo(f"\n⏳ مشغول: {result.get('error', 'مهمة قيد المعالجة')}")
                 typer.echo()
             else:
-                typer.echo(f"\n📋 النتيجة:")
+                typer.echo("\n📋 النتيجة:")
                 typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
                 typer.echo()
 
@@ -481,7 +492,8 @@ class HybridMode:
         tasks = []
 
         if self.config.telegram_enabled and self.config.bot_token:
-            from interfaces.telegram.bot import OSSWorkTelegramBot, BotConfig
+            from interfaces.telegram.bot import BotConfig, OSSWorkTelegramBot
+
             bot_cfg = BotConfig(token=self.config.bot_token, simulation_only=self.config.simulation_only)
             bot = OSSWorkTelegramBot(config=bot_cfg, processor=self.processor)
             bot.setup()
@@ -491,8 +503,10 @@ class HybridMode:
             typer.echo("📱 التلجرام: غير مضبوط")
 
         if self.config.desktop_mode == "api":
-            from interfaces.api.server import app as api_app
             import uvicorn
+
+            from interfaces.api.server import app as api_app
+
             typer.echo(f"🌐桌面 API: http://{self.config.api_host}:{self.config.api_port}")
             tasks.append(uvicorn.run(api_app, host=self.config.api_host, port=self.config.api_port, log_level="info"))
         else:
@@ -511,6 +525,7 @@ class HybridMode:
 
 
 # ── Entry Point ──────────────────────────────────────────────────
+
 
 def main() -> None:
     """نقطة دخول CLI."""

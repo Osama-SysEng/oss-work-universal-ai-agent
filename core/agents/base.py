@@ -1,4 +1,5 @@
 """Shared lifecycle contract for all agents."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -11,7 +12,16 @@ from core.policy import DEFAULT_POLICY, SafetyPolicy
 
 
 class BaseAgent(ABC):
-    def __init__(self, agent_type: str, *, name: str | None = None, description: str = "", context: dict[str, Any] | None = None, policy: SafetyPolicy = DEFAULT_POLICY, audit: AuditLogger | None = None) -> None:
+    def __init__(
+        self,
+        agent_type: str,
+        *,
+        name: str | None = None,
+        description: str = "",
+        context: dict[str, Any] | None = None,
+        policy: SafetyPolicy = DEFAULT_POLICY,
+        audit: AuditLogger | None = None,
+    ) -> None:
         self.agent_type = agent_type
         self.name = name or f"{agent_type}_agent"
         self.description = description
@@ -19,7 +29,12 @@ class BaseAgent(ABC):
         self.policy = policy
         self.audit = audit or AuditLogger()
         self.execution_history: list[dict[str, Any]] = []
-        self.performance_metrics = {"tasks_completed": 0, "tasks_failed": 0, "average_execution_time": 0.0, "success_rate": 0.0}
+        self.performance_metrics = {
+            "tasks_completed": 0,
+            "tasks_failed": 0,
+            "average_execution_time": 0.0,
+            "success_rate": 0.0,
+        }
 
     @property
     @abstractmethod
@@ -51,4 +66,10 @@ class BaseAgent(ABC):
         return self.finalize(TaskResult("failed", errors=[message]).as_dict(), started)
 
     def get_status(self) -> dict[str, Any]:
-        return {"name": self.name, "type": self.agent_type, "capabilities": list(self.capabilities), "metrics": self.performance_metrics.copy(), "history_count": len(self.execution_history)}
+        return {
+            "name": self.name,
+            "type": self.agent_type,
+            "capabilities": list(self.capabilities),
+            "metrics": self.performance_metrics.copy(),
+            "history_count": len(self.execution_history),
+        }

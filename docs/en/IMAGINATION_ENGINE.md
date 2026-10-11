@@ -141,9 +141,9 @@ result: ImaginationResult = await engine.imagine(
     requirements={"language": "English", "detail_level": "comprehensive"},
 )
 
-print(result.solution)          # Rich Markdown proposal
-print(result.confidence)        # 0.0–1.0
-print(result.invented)          # True if invention triggered
+print(result.solution)  # Rich Markdown proposal
+print(result.confidence)  # 0.0–1.0
+print(result.invented)  # True if invention triggered
 print(result.cross_domain_bridges)  # List of N×N bridges found
 ```
 

@@ -1,11 +1,11 @@
 """Small, typed contracts used at subsystem boundaries."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
-
 
 VERSION = "0.3.0"
 
@@ -14,8 +14,9 @@ VERSION = "0.3.0"
 # Contracts
 # ═══════════════════════════════════════════════════════════════════
 
+
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @dataclass(frozen=True)
@@ -27,7 +28,7 @@ class TaskRequest:
     created_at: str = field(default_factory=utc_now)
 
     @classmethod
-    def create(cls, task: str, *, user_id: str = "local", context: dict[str, Any] | None = None) -> "TaskRequest":
+    def create(cls, task: str, *, user_id: str = "local", context: dict[str, Any] | None = None) -> TaskRequest:
         clean = str(task).strip()
         if not clean or len(clean) > 10_000:
             raise ValueError("task must contain between 1 and 10000 characters")

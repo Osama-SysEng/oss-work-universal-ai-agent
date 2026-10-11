@@ -7,12 +7,12 @@ Defines: ImaginationResult, Thread, Simulation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass
 class Thread:
     """A single parallel reasoning thread exploring one domain."""
+
     domain: str
     approach: str
     outcome: str
@@ -24,6 +24,7 @@ class Thread:
 @dataclass
 class Simulation:
     """A future timeline branch from Tesla-style simulation."""
+
     timeline: str
     outcome: str
     probability: float
@@ -34,6 +35,7 @@ class Simulation:
 @dataclass
 class ImaginationResult:
     """The final output of the Imagination Engine."""
+
     solution: str
     reasoning_chain: list[str]
     confidence: float
@@ -49,6 +51,7 @@ class ImaginationResult:
 @dataclass
 class ImaginationEngineConfig:
     """Configuration for the Ultra IQ Imagination Engine."""
+
     max_threads: int = 1000
     invention_enabled: bool = True
     simulation_depth: int = 100

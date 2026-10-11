@@ -25,20 +25,20 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from pathlib import Path
 
-import logging
-from fastapi import FastAPI, HTTPException, Depends, Request
-from pydantic import BaseModel, Field
 import uvicorn
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel, Field
 
 # إضافة المسار للمفاتيح الداخلية
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from core.config import load_config
-from core.processor import TaskProcessor, get_processor
+from core.processor import get_processor
 from core.rate_limit import RateLimiter
 
 
@@ -60,18 +60,20 @@ _rate_limiter = RateLimiter(*_rate_limit_from_env())
 # FastAPI App
 # ═══════════════════════════════════════════════════════════════════
 
+
 class TaskRequest(BaseModel):
     """طلب مهمة — يعمل مثل أي API لنموذج ذكاء اصطناعي."""
-    task: str = Field(..., min_length=2, max_length=10000,
-                      description="المهمة المراد معالجتها. مثل 프롬프트 لـ ChatGPT.")
-    user_id: str = Field(default="local", min_length=1, max_length=128,
-                          description="معرف المستخدم لتتبع السجل")
-    context: dict = Field(default_factory=dict,
-                          description="سياق اختياري")
+
+    task: str = Field(
+        ..., min_length=2, max_length=10000, description="المهمة المراد معالجتها. مثل 프롬프트 لـ ChatGPT."
+    )
+    user_id: str = Field(default="local", min_length=1, max_length=128, description="معرف المستخدم لتتبع السجل")
+    context: dict = Field(default_factory=dict, description="سياق اختياري")
 
 
 class TaskResponse(BaseModel):
     """ردود المهمة."""
+
     status: str = Field(..., description="completed | failed | busy")
     data: dict = Field(default_factory=dict, description="بيانات النتيجة")
     errors: list = Field(default_factory=list, description="رسائل الخطأ")
@@ -158,10 +160,12 @@ logger = logging.getLogger("oss-work-api")
 # JEV routes — TypeSafe AI System One Model
 try:
     from interfaces.api.jev_routes import router as jev_router
+
     app.include_router(jev_router)
     logger.info("JEV routes loaded")
 except ImportError:
     logger.debug("JEV routes not available")
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -209,8 +213,8 @@ async def submit_task(
     try:
         if http_request.client is not None:
             client_key = f"{request.user_id}:{http_request.client.host}"
-    except Exception:
-        pass
+    except Exception as _exc:
+        logger.exception("Suppressed exception in server.py")
     if not _rate_limiter.allow(client_key):
         raise HTTPException(429, "تجاوزت حد المعدل — حاول لاحقًا")
 
@@ -240,23 +244,27 @@ async def list_models(limit: int = 50, offset: int = 0):
     offset = max(0, offset)
     try:
         from core.services.model_router import get_router
+
         router = get_router()
         models = []
         for m in router._model_map.values():
-            models.append({
-                "id": m.id,
-                "name": m.name,
-                "provider": m.provider.value,
-                "category": m.category,
-                "context_window": m.context_window,
-                "supports_vision": m.supports_vision,
-                "cost_per_1k_tokens": m.cost_per_1k_tokens,
-                "api_available": m.api_available,
-                "browser_url": m.browser_url,
-            })
+            models.append(
+                {
+                    "id": m.id,
+                    "name": m.name,
+                    "provider": m.provider.value,
+                    "category": m.category,
+                    "context_window": m.context_window,
+                    "supports_vision": m.supports_vision,
+                    "cost_per_1k_tokens": m.cost_per_1k_tokens,
+                    "api_available": m.api_available,
+                    "browser_url": m.browser_url,
+                }
+            )
         total = len(models)
-        return {"models": models[offset:offset + limit], "total": total, "limit": limit, "offset": offset}
+        return {"models": models[offset : offset + limit], "total": total, "limit": limit, "offset": offset}
     except Exception as e:
+        logger.exception("Unhandled exception in server.py")
         raise HTTPException(500, f"فشل في عرض النماذج: {e}")
 
 
@@ -281,6 +289,7 @@ async def root():
 # Entry Point
 # ═══════════════════════════════════════════════════════════════════
 
+
 def main() -> None:
     """تشغيل خادم API المحلي."""
     config = load_config()
@@ -289,7 +298,7 @@ def main() -> None:
     print("  OSS Work — Desktop Local API Server")
     print("=" * 60)
     print()
-    print(f"  الإصدار:    0.3.0")
+    print("  الإصدار:    0.3.0")
     print(f"  الوضع:       {config.mode}")
     print(f"  المحاكاة:    {'ON' if config.simulation_only else 'OFF'}")
     print(f"  API URL:     http://{config.api_host}:{config.api_port}")

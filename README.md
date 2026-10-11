@@ -114,16 +114,17 @@ This is the core differentiator. OSS Work's imagination engine is a **genuine pa
 
 ```python
 from core.imagination.engine import UltraIQE
+
 engine = UltraIQE()
 
 result = engine.imagine(
     "How do I build a real-time collaborative editor like Google Docs?",
 )
-print(result.solution)        # Full technical proposal
-print(result.confidence)      # 0.0–1.0 calibrated score
-print(result.invented)        # True if genuinely new
+print(result.solution)  # Full technical proposal
+print(result.confidence)  # 0.0–1.0 calibrated score
+print(result.invented)  # True if genuinely new
 print(result.cross_domain_bridges)  # E.g. ["OperationalTransform × CRDTs"]
-print(result.simulation_branches)   # Future scenario analysis
+print(result.simulation_branches)  # Future scenario analysis
 ```
 
 The engine runs entirely offline. No API calls. No network. Just parallel reasoning.

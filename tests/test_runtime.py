@@ -7,7 +7,9 @@ from core.agents.orchestrator import OrchestratorAgent
 
 def test_memory_round_trip_is_user_scoped(tmp_path: Path):
     db = tmp_path / "memory.sqlite3"
-    write = MemoryAgent(context={"db_path": str(db), "task": "write", "user_id": "a", "key": "k", "value": "v"}).execute()
+    write = MemoryAgent(
+        context={"db_path": str(db), "task": "write", "user_id": "a", "key": "k", "value": "v"}
+    ).execute()
     assert write["status"] == "completed"
     own = MemoryAgent(context={"db_path": str(db), "task": "read", "user_id": "a", "key": "k"}).execute()
     other = MemoryAgent(context={"db_path": str(db), "task": "read", "user_id": "b", "key": "k"}).execute()
@@ -23,9 +25,7 @@ def test_orchestrator_is_bounded_and_reports_no_external_actions():
 
 
 def test_integration_is_simulation_only():
-    result = IntegrationAgent(
-        context={"task": "send", "integration": "telegram", "action": "send"}
-    ).execute()
+    result = IntegrationAgent(context={"task": "send", "integration": "telegram", "action": "send"}).execute()
     assert result["status"] == "simulated"
     assert result["data"]["action"] == "send"
     assert result["decision"]["external_action_attempted"] is False

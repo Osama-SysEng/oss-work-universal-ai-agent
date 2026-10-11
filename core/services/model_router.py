@@ -12,17 +12,20 @@ Supports:
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
-import json
 import os
 import time
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 # ── Model categories ──────────────────────────────────────────
+
 
 class ModelProvider(str, Enum):
     OPENAI = "openai"
@@ -42,6 +45,7 @@ class ModelProvider(str, Enum):
 @dataclass
 class ModelInfo:
     """Information about a supported model."""
+
     id: str
     name: str
     provider: ModelProvider
@@ -59,137 +63,310 @@ class ModelInfo:
 
 MODELS = [
     # ── American ──
-    ModelInfo("gpt4o", "GPT-4o", ModelProvider.OPENAI, "general",
-              context_window=128000, supports_vision=True,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://chat.openai.com"),
-    ModelInfo("gpt4o_mini", "GPT-4o Mini", ModelProvider.OPENAI, "general",
-              context_window=128000, supports_vision=True,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://chat.openai.com"),
-    ModelInfo("chatgpt_free", "ChatGPT Free", ModelProvider.OPENAI, "general",
-              context_window=30000, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://chat.openai.com"),
-    ModelInfo("claude", "Claude", ModelProvider.ANTHROPIC, "general",
-              context_window=200000, supports_vision=True,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://claude.ai"),
-    ModelInfo("gemini_pro", "Gemini Pro", ModelProvider.GOOGLE, "general",
-              context_window=128000, supports_vision=True,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://gemini.google.com"),
-    ModelInfo("gemini_flash", "Gemini Flash", ModelProvider.GOOGLE, "fast",
-              context_window=128000, supports_vision=True,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://gemini.google.com"),
-    ModelInfo("grok", "Grok", ModelProvider.XAI, "general",
-              context_window=131072, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://x.com/i/grok"),
-    ModelInfo("perplexity", "Perplexity", ModelProvider.OPENAI, "search",
-              context_window=50000, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://perplexity.ai"),
-    ModelInfo("copilot", "Microsoft Copilot", ModelProvider.GOOGLE, "general",
-              context_window=128000, supports_vision=True,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://copilot.microsoft.com"),
-
+    ModelInfo(
+        "gpt4o",
+        "GPT-4o",
+        ModelProvider.OPENAI,
+        "general",
+        context_window=128000,
+        supports_vision=True,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://chat.openai.com",
+    ),
+    ModelInfo(
+        "gpt4o_mini",
+        "GPT-4o Mini",
+        ModelProvider.OPENAI,
+        "general",
+        context_window=128000,
+        supports_vision=True,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://chat.openai.com",
+    ),
+    ModelInfo(
+        "chatgpt_free",
+        "ChatGPT Free",
+        ModelProvider.OPENAI,
+        "general",
+        context_window=30000,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://chat.openai.com",
+    ),
+    ModelInfo(
+        "claude",
+        "Claude",
+        ModelProvider.ANTHROPIC,
+        "general",
+        context_window=200000,
+        supports_vision=True,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://claude.ai",
+    ),
+    ModelInfo(
+        "gemini_pro",
+        "Gemini Pro",
+        ModelProvider.GOOGLE,
+        "general",
+        context_window=128000,
+        supports_vision=True,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://gemini.google.com",
+    ),
+    ModelInfo(
+        "gemini_flash",
+        "Gemini Flash",
+        ModelProvider.GOOGLE,
+        "fast",
+        context_window=128000,
+        supports_vision=True,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://gemini.google.com",
+    ),
+    ModelInfo(
+        "grok",
+        "Grok",
+        ModelProvider.XAI,
+        "general",
+        context_window=131072,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://x.com/i/grok",
+    ),
+    ModelInfo(
+        "perplexity",
+        "Perplexity",
+        ModelProvider.OPENAI,
+        "search",
+        context_window=50000,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://perplexity.ai",
+    ),
+    ModelInfo(
+        "copilot",
+        "Microsoft Copilot",
+        ModelProvider.GOOGLE,
+        "general",
+        context_window=128000,
+        supports_vision=True,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://copilot.microsoft.com",
+    ),
     # ── Chinese ──
-    ModelInfo("kimi", "Kimi (Moonshot)", ModelProvider.GOOGLE, "general",
-              context_window=200000, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://kimi.moonshot.cn"),
-    ModelInfo("qwen", "Qwen (Alibaba)", ModelProvider.GOOGLE, "general",
-              context_window=128000, supports_vision=True,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://tongyi.aliyun.com"),
-    ModelInfo("deepseek", "DeepSeek", ModelProvider.DEEPSEEK, "general",
-              context_window=128000, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://deepseek.com"),
-    ModelInfo("deepseek_coder", "DeepSeek Coder", ModelProvider.DEEPSEEK, "code",
-              context_window=128000, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https:// DeepSeek.com"),
-    ModelInfo("ernie", "Baidu ERNIE", ModelProvider.GOOGLE, "general",
-              context_window=100000, supports_vision=True,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://qianfan.baidubce.com"),
-    ModelInfo("glm", "Zhipu GLM", ModelProvider.GOOGLE, "general",
-              context_window=128000, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=False,
-              browser_url="https://open.bigmodel.cn"),
-
+    ModelInfo(
+        "kimi",
+        "Kimi (Moonshot)",
+        ModelProvider.GOOGLE,
+        "general",
+        context_window=200000,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://kimi.moonshot.cn",
+    ),
+    ModelInfo(
+        "qwen",
+        "Qwen (Alibaba)",
+        ModelProvider.GOOGLE,
+        "general",
+        context_window=128000,
+        supports_vision=True,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://tongyi.aliyun.com",
+    ),
+    ModelInfo(
+        "deepseek",
+        "DeepSeek",
+        ModelProvider.DEEPSEEK,
+        "general",
+        context_window=128000,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://deepseek.com",
+    ),
+    ModelInfo(
+        "deepseek_coder",
+        "DeepSeek Coder",
+        ModelProvider.DEEPSEEK,
+        "code",
+        context_window=128000,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https:// DeepSeek.com",
+    ),
+    ModelInfo(
+        "ernie",
+        "Baidu ERNIE",
+        ModelProvider.GOOGLE,
+        "general",
+        context_window=100000,
+        supports_vision=True,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://qianfan.baidubce.com",
+    ),
+    ModelInfo(
+        "glm",
+        "Zhipu GLM",
+        ModelProvider.GOOGLE,
+        "general",
+        context_window=128000,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=False,
+        browser_url="https://open.bigmodel.cn",
+    ),
     # ── Local ──
-    ModelInfo("ollama_llama3", "Ollama Llama 3", ModelProvider.OLLAMA, "general",
-              context_window=8192, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=True),
-    ModelInfo("ollama_llama3_70b", "Ollama Llama 3 70B", ModelProvider.OLLAMA, "general",
-              context_window=8192, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=True),
-    ModelInfo("ollama_mistral", "Ollama Mistral", ModelProvider.OLLAMA, "general",
-              context_window=8192, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=True),
-    ModelInfo("lm_studio", "LM Studio", ModelProvider.LOCAL, "general",
-              context_window=4096, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=True),
-    ModelInfo("gpt4all", "GPT4All", ModelProvider.LOCAL, "general",
-              context_window=4096, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=True),
-    ModelInfo("llama_cpp", "llama.cpp", ModelProvider.LOCAL, "general",
-              context_window=4096, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=True),
-
+    ModelInfo(
+        "ollama_llama3",
+        "Ollama Llama 3",
+        ModelProvider.OLLAMA,
+        "general",
+        context_window=8192,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=True,
+    ),
+    ModelInfo(
+        "ollama_llama3_70b",
+        "Ollama Llama 3 70B",
+        ModelProvider.OLLAMA,
+        "general",
+        context_window=8192,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=True,
+    ),
+    ModelInfo(
+        "ollama_mistral",
+        "Ollama Mistral",
+        ModelProvider.OLLAMA,
+        "general",
+        context_window=8192,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=True,
+    ),
+    ModelInfo(
+        "lm_studio",
+        "LM Studio",
+        ModelProvider.LOCAL,
+        "general",
+        context_window=4096,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=True,
+    ),
+    ModelInfo(
+        "gpt4all",
+        "GPT4All",
+        ModelProvider.LOCAL,
+        "general",
+        context_window=4096,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=True,
+    ),
+    ModelInfo(
+        "llama_cpp",
+        "llama.cpp",
+        ModelProvider.LOCAL,
+        "general",
+        context_window=4096,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=True,
+    ),
     # ── Open-source APIs ──
-    ModelInfo("huggingface", "HuggingFace Inference", ModelProvider.HUGGINGFACE, "general",
-              context_window=4096, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=True),
-    ModelInfo("together_llama", "Together AI Llama", ModelProvider.TOGETHER, "general",
-              context_window=8192, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=True),
-    ModelInfo("groq_llama", "Groq Llama", ModelProvider.GROQ, "fast",
-              context_window=8192, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=True),
-    ModelInfo("openrouter", "OpenRouter Free", ModelProvider.OPENROUTER, "general",
-              context_window=4096, supports_vision=False,
-              cost_per_1k_tokens=0.0, api_available=True),
+    ModelInfo(
+        "huggingface",
+        "HuggingFace Inference",
+        ModelProvider.HUGGINGFACE,
+        "general",
+        context_window=4096,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=True,
+    ),
+    ModelInfo(
+        "together_llama",
+        "Together AI Llama",
+        ModelProvider.TOGETHER,
+        "general",
+        context_window=8192,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=True,
+    ),
+    ModelInfo(
+        "groq_llama",
+        "Groq Llama",
+        ModelProvider.GROQ,
+        "fast",
+        context_window=8192,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=True,
+    ),
+    ModelInfo(
+        "openrouter",
+        "OpenRouter Free",
+        ModelProvider.OPENROUTER,
+        "general",
+        context_window=4096,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=True,
+    ),
 ]
 
 
 # ── Routing Table ─────────────────────────────────────────────
 
 ROUTING_TABLE: dict[str, list[str]] = {
-    "long_form_writing":    ["claude", "gpt4o", "gemini_pro", "kimi", "qwen"],
-    "code_generation":      ["gpt4o", "deepseek_coder", "qwen", "ollama_llama3", "groq_llama"],
-    "arabic_content":       ["kimi", "qwen", "gemini_pro", "chatgpt_free"],
-    "chinese_content":      ["kimi", "qwen", "ernie", "glm"],
-    "fast_response":        ["groq_llama", "gemini_flash", "deepseek", "ollama_mistral"],
-    "image_analysis":       ["gpt4o", "gemini_pro", "claude"],
-    "reasoning":            ["gpt4o", "deepseek", "qwen", "claude"],
-    "security_analysis":    ["claude", "gpt4o", "deepseek"],
-    "search_research":      ["perplexity", "gemini_pro", "chatgpt_free"],
-    "coding_help":          ["gpt4o", "deepseek_coder", "qwen", "groq_llama"],
-    "creative_writing":     ["claude", "gpt4o", "kimi", "gemini_pro"],
-    "translation":          ["gemini_pro", "qwen", "kimi", "chatgpt_free"],
-    "summarization":        ["gemini_flash", "groq_llama", "ollama_mistral", "chatgpt_free"],
-    "general_chat":         ["chatgpt_free", "gemini_flash", "claude", "gemini_pro"],
-    "markdown_formatting":  ["gemini_flash", "groq_llama", "chatgpt_free"],
-    "html_generation":      ["gpt4o", "deepseek_coder", "qwen", "groq_llama"],
-    "offline_fallback":     ["ollama_llama3", "lm_studio", "gpt4all"],
+    "long_form_writing": ["claude", "gpt4o", "gemini_pro", "kimi", "qwen"],
+    "code_generation": ["gpt4o", "deepseek_coder", "qwen", "ollama_llama3", "groq_llama"],
+    "arabic_content": ["kimi", "qwen", "gemini_pro", "chatgpt_free"],
+    "chinese_content": ["kimi", "qwen", "ernie", "glm"],
+    "fast_response": ["groq_llama", "gemini_flash", "deepseek", "ollama_mistral"],
+    "image_analysis": ["gpt4o", "gemini_pro", "claude"],
+    "reasoning": ["gpt4o", "deepseek", "qwen", "claude"],
+    "security_analysis": ["claude", "gpt4o", "deepseek"],
+    "search_research": ["perplexity", "gemini_pro", "chatgpt_free"],
+    "coding_help": ["gpt4o", "deepseek_coder", "qwen", "groq_llama"],
+    "creative_writing": ["claude", "gpt4o", "kimi", "gemini_pro"],
+    "translation": ["gemini_pro", "qwen", "kimi", "chatgpt_free"],
+    "summarization": ["gemini_flash", "groq_llama", "ollama_mistral", "chatgpt_free"],
+    "general_chat": ["chatgpt_free", "gemini_flash", "claude", "gemini_pro"],
+    "markdown_formatting": ["gemini_flash", "groq_llama", "chatgpt_free"],
+    "html_generation": ["gpt4o", "deepseek_coder", "qwen", "groq_llama"],
+    "offline_fallback": ["ollama_llama3", "lm_studio", "gpt4all"],
 }
 
 
 # ── Model Router ──────────────────────────────────────────────
 
+
 class ModelRouter:
     """
     Routes tasks to the best available AI model at zero cost.
-    
+
     Uses a priority-based routing table, failover between candidates,
     and a local fallback for offline scenarios.
-    
+
     Zero-cost routes:
     - Browser simulation (when user is logged into model's website)
     - Local models (Ollama, LM Studio)
@@ -205,13 +382,30 @@ class ModelRouter:
         """Classify a task into a routing category."""
         task_lower = task.lower()
 
-        if any(kw in task_lower for kw in ["code", "function", "class", "python", "javascript",
-                                              "typescript", "api", "endpoint", "algorithm",
-                                              "debug", "fix", "refactor", "implement"]):
+        if any(
+            kw in task_lower
+            for kw in [
+                "code",
+                "function",
+                "class",
+                "python",
+                "javascript",
+                "typescript",
+                "api",
+                "endpoint",
+                "algorithm",
+                "debug",
+                "fix",
+                "refactor",
+                "implement",
+            ]
+        ):
             return "code_generation"
 
-        if any(kw in task_lower for kw in ["image", "picture", "photo", "screenshot", "visual",
-                                              "chart", "graph", "diagram"]):
+        if any(
+            kw in task_lower
+            for kw in ["image", "picture", "photo", "screenshot", "visual", "chart", "graph", "diagram"]
+        ):
             return "image_analysis"
 
         if any(kw in task_lower for kw in ["arabic", "العربية", "عربي", "فصحى", "امي calibrate"]):
@@ -220,12 +414,15 @@ class ModelRouter:
         if any(kw in task_lower for kw in ["chinese", "中文", "中国", "汉语"]):
             return "chinese_content"
 
-        if any(kw in task_lower for kw in ["write", "article", "blog", "story", "essay",
-                                              "creative", "novel", " poem", "narrative"]):
+        if any(
+            kw in task_lower
+            for kw in ["write", "article", "blog", "story", "essay", "creative", "novel", " poem", "narrative"]
+        ):
             return "creative_writing"
 
-        if any(kw in task_lower for kw in ["search", "research", "find", "look up", "investigate",
-                                              "discover", "explore"]):
+        if any(
+            kw in task_lower for kw in ["search", "research", "find", "look up", "investigate", "discover", "explore"]
+        ):
             return "search_research"
 
         if any(kw in task_lower for kw in ["fast", "quick", "instant", "immediate", "urgent"]):
@@ -234,24 +431,26 @@ class ModelRouter:
         if any(kw in task_lower for kw in ["summarize", "summary", "tl;dr", "brief", "short"]):
             return "summarization"
 
-        if any(kw in task_lower for kw in ["translate", "translation", "arabic", "chinese",
-                                              "spanish", "french", "german"]):
+        if any(
+            kw in task_lower for kw in ["translate", "translation", "arabic", "chinese", "spanish", "french", "german"]
+        ):
             return "translation"
 
-        if any(kw in task_lower for kw in ["html", "css", "javascript", "frontend", "ui", "web page",
-                                              "website"]):
+        if any(kw in task_lower for kw in ["html", "css", "javascript", "frontend", "ui", "web page", "website"]):
             return "html_generation"
 
-        if any(kw in task_lower for kw in ["analyze", "security", "vulnerability", "audit",
-                                              "review", "check"]):
+        if any(kw in task_lower for kw in ["analyze", "security", "vulnerability", "audit", "review", "check"]):
             return "security_analysis"
 
-        if any(kw in task_lower for kw in ["reason", "think", "logic", "philosophy", "argument",
-                                              "debate", "analyze deeply"]):
+        if any(
+            kw in task_lower
+            for kw in ["reason", "think", "logic", "philosophy", "argument", "debate", "analyze deeply"]
+        ):
             return "reasoning"
 
-        if any(kw in task_lower for kw in ["long", "detailed", "comprehensive", "thorough",
-                                              "complete guide", "in-depth"]):
+        if any(
+            kw in task_lower for kw in ["long", "detailed", "comprehensive", "thorough", "complete guide", "in-depth"]
+        ):
             return "long_form_writing"
 
         return "general_chat"
@@ -286,6 +485,7 @@ class ModelRouter:
             # Browser-based: check if Playwright is available
             try:
                 import playwright.async_api  # noqa: F401
+
                 return True
             except ImportError:
                 return False
@@ -293,16 +493,19 @@ class ModelRouter:
     async def _check_ollama(self) -> bool:
         """Check if Ollama is running locally."""
         import httpx
+
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 r = await client.get("http://localhost:11434/api/tags")
                 return r.status_code == 200
-        except Exception:
+        except Exception as _exc:
+            logger.exception("Unhandled exception in model_router.py")
             return False
 
     async def _check_local(self) -> bool:
         """Check if any local inference server is running."""
         import httpx
+
         ports = [1234, 8080, 5000]
         for port in ports:
             try:
@@ -310,17 +513,20 @@ class ModelRouter:
                     r = await client.get(f"http://localhost:{port}/health", timeout=3.0)
                     if r.status_code == 200:
                         return True
-            except Exception:
+            except Exception as _exc:  # noqa: BLE001 - preserve broad catch; logged below
+                logger.debug("Suppressed exception in model_router.py: %s", _exc)
                 continue
         return False
 
     async def complete(
-        self, task: str, requirements: dict[str, Any] | None = None,
+        self,
+        task: str,
+        requirements: dict[str, Any] | None = None,
         model_id: str | None = None,
     ) -> dict[str, Any]:
         """
         Route a task to the best available model and return the response.
-        
+
         Tries candidates in order, failover on failure, local fallback last.
         """
         started = time.monotonic()
@@ -353,12 +559,14 @@ class ModelRouter:
                 elapsed = (time.monotonic() - started) * 1000
 
                 # Log usage
-                self._usage_log.append({
-                    "model": candidate_id,
-                    "task_type": task_type,
-                    "latency_ms": round(elapsed, 2),
-                    "timestamp": time.time(),
-                })
+                self._usage_log.append(
+                    {
+                        "model": candidate_id,
+                        "task_type": task_type,
+                        "latency_ms": round(elapsed, 2),
+                        "timestamp": time.time(),
+                    }
+                )
 
                 return {
                     "status": "completed",
@@ -370,6 +578,7 @@ class ModelRouter:
                     "route": "api" if model.api_available else "browser",
                 }
             except Exception as e:
+                logger.exception("Unhandled exception in model_router.py")
                 last_error = str(e)
                 continue
 
@@ -395,9 +604,7 @@ class ModelRouter:
             "latency_ms": round((time.monotonic() - started) * 1000, 2),
         }
 
-    async def _call_model(
-        self, model_id: str, task: str, requirements: dict[str, Any]
-    ) -> str:
+    async def _call_model(self, model_id: str, task: str, requirements: dict[str, Any]) -> str:
         """Call a specific model and return its response."""
         model = self._model_map.get(model_id)
         if not model:
@@ -413,9 +620,7 @@ class ModelRouter:
 
         raise ValueError(f"No API or browser route for model: {model_id}")
 
-    async def _call_api_model(
-        self, model: ModelInfo, task: str, requirements: dict[str, Any]
-    ) -> str:
+    async def _call_api_model(self, model: ModelInfo, task: str, requirements: dict[str, Any]) -> str:
         """Call a model via its API."""
         import httpx
 
@@ -487,11 +692,8 @@ class ModelRouter:
         else:
             raise ValueError(f"No API implementation for provider: {model.provider}")
 
-    async def _call_browser_model(
-        self, model: ModelInfo, task: str
-    ) -> str:
+    async def _call_browser_model(self, model: ModelInfo, task: str) -> str:
         """Call a model via its web interface (zero API cost)."""
-        import asyncio
         from playwright.async_api import async_playwright
 
         url = model.browser_url
@@ -524,6 +726,7 @@ class ModelRouter:
         # Try Ollama
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 r = await client.post(
                     "http://localhost:11434/api/generate",
@@ -536,8 +739,8 @@ class ModelRouter:
                 if r.status_code == 200:
                     data = r.json()
                     return data.get("response", "") or data.get("generation", "")
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.exception("Suppressed exception in model_router.py")
 
         return None
 

@@ -7,11 +7,13 @@ Handles: text messages, voice messages (transcription), images (analysis),
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
-from typing import Any
+import logging
 
-from telegram import Update, Document, PhotoSize, Voice
+logger = logging.getLogger(__name__)
+
+from pathlib import Path
+
+from telegram import Document, PhotoSize, Update
 from telegram.ext import ContextTypes
 
 
@@ -48,7 +50,8 @@ class BotHandlers:
 
             await self.bot._log_event(user_id, "task", task[:100], result.get("status", ""))
         except Exception as e:
-            await update.message.reply_text(f"❌ خطأ: {str(e)}")
+            logger.exception("Unhandled exception in handlers.py")
+            await update.message.reply_text(f"❌ خطأ: {e!s}")
         finally:
             self.bot._active_tasks.pop(user_id, None)
 
@@ -78,7 +81,8 @@ class BotHandlers:
             msg.text = text
             await self.handle_message(update, context)
         except Exception as e:
-            await msg.reply_text(f"❌ خطأ في معالجة الصوت: {str(e)}")
+            logger.exception("Unhandled exception in handlers.py")
+            await msg.reply_text(f"❌ خطأ في معالجة الصوت: {e!s}")
         finally:
             self.bot._active_tasks.pop(user_id, None)
 
@@ -107,7 +111,8 @@ class BotHandlers:
             msg.text = description
             await self.handle_message(update, context)
         except Exception as e:
-            await msg.reply_text(f"❌ خطأ في معالجة الصورة: {str(e)}")
+            logger.exception("Unhandled exception in handlers.py")
+            await msg.reply_text(f"❌ خطأ في معالجة الصورة: {e!s}")
         finally:
             self.bot._active_tasks.pop(user_id, None)
 
@@ -145,6 +150,7 @@ class BotHandlers:
             msg.text = task[:2000]
             await self.handle_message(update, context)
         except Exception as e:
-            await msg.reply_text(f"❌ خطأ في معالجة الوثيقة: {str(e)}")
+            logger.exception("Unhandled exception in handlers.py")
+            await msg.reply_text(f"❌ خطأ في معالجة الوثيقة: {e!s}")
         finally:
             self.bot._active_tasks.pop(user_id, None)

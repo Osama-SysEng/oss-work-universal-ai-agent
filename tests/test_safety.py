@@ -12,13 +12,17 @@ def test_mutation_requires_approval():
 
 
 def test_file_agent_cannot_escape_root(tmp_path: Path):
-    result = FileAgent(context={"task": "read", "path": str(tmp_path.parent / "outside.txt"), "allowed_root": str(tmp_path)}).execute()
+    result = FileAgent(
+        context={"task": "read", "path": str(tmp_path.parent / "outside.txt"), "allowed_root": str(tmp_path)}
+    ).execute()
     assert result["status"] == "failed"
     assert "outside" in result["errors"][0]
 
 
 def test_file_write_requires_approval(tmp_path: Path):
-    result = FileAgent(context={"task": "write", "path": str(tmp_path / "x.txt"), "content": "x", "allowed_root": str(tmp_path)}).execute()
+    result = FileAgent(
+        context={"task": "write", "path": str(tmp_path / "x.txt"), "content": "x", "allowed_root": str(tmp_path)}
+    ).execute()
     assert result["status"] == "denied"
     assert not (tmp_path / "x.txt").exists()
 

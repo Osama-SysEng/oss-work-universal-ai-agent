@@ -15,52 +15,64 @@ class KeyboardBuilder:
     @staticmethod
     def approval_keyboard() -> InlineKeyboardMarkup:
         """Keyboard for approval requests."""
-        return InlineKeyboardMarkup([
+        return InlineKeyboardMarkup(
             [
-                InlineKeyboardButton("✅ approve", callback_data="approve"),
-                InlineKeyboardButton("❌ رفض", callback_data="reject"),
+                [
+                    InlineKeyboardButton("✅ approve", callback_data="approve"),
+                    InlineKeyboardButton("❌ رفض", callback_data="reject"),
+                ]
             ]
-        ])
+        )
 
     @staticmethod
     def completion_keyboard() -> InlineKeyboardMarkup:
         """Keyboard for completed tasks."""
-        return InlineKeyboardMarkup([
+        return InlineKeyboardMarkup(
             [
-                InlineKeyboardButton("🔁 تكرار", callback_data="repeat"),
-                InlineKeyboardButton("📋 تفاصيل", callback_data="details"),
+                [
+                    InlineKeyboardButton("🔁 تكرار", callback_data="repeat"),
+                    InlineKeyboardButton("📋 تفاصيل", callback_data="details"),
+                ]
             ]
-        ])
+        )
 
     @staticmethod
     def start_keyboard() -> InlineKeyboardMarkup:
         """Keyboard for /start command."""
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚀 ابدأ الآن", callback_data="start_task")],
-            [InlineKeyboardButton("❓ مساعدة", callback_data="help")],
-        ])
+        return InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("🚀 ابدأ الآن", callback_data="start_task")],
+                [InlineKeyboardButton("❓ مساعدة", callback_data="help")],
+            ]
+        )
 
     @staticmethod
     def help_keyboard() -> InlineKeyboardMarkup:
         """Keyboard for /help command."""
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 العودة", callback_data="back")],
-        ])
+        return InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("🔙 العودة", callback_data="back")],
+            ]
+        )
 
     @staticmethod
     def error_keyboard() -> InlineKeyboardMarkup:
         """Keyboard for error states."""
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔁 حاول مجددًا", callback_data="retry")],
-            [InlineKeyboardButton("❓ مساعدة", callback_data="help")],
-        ])
+        return InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("🔁 حاول مجددًا", callback_data="retry")],
+                [InlineKeyboardButton("❓ مساعدة", callback_data="help")],
+            ]
+        )
 
     @staticmethod
     def main_menu() -> InlineKeyboardMarkup:
         """Main menu keyboard."""
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚀 ابدأ مهمة", callback_data="start_task")],
-            [InlineKeyboardButton("📊 الحالة", callback_data="status")],
-            [InlineKeyboardButton("🤖 النماذج", callback_data="models")],
-            [InlineKeyboardButton("🔧 الإعدادات", callback_data="settings")],
-        ])
+        return InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("🚀 ابدأ مهمة", callback_data="start_task")],
+                [InlineKeyboardButton("📊 الحالة", callback_data="status")],
+                [InlineKeyboardButton("🤖 النماذج", callback_data="models")],
+                [InlineKeyboardButton("🔧 الإعدادات", callback_data="settings")],
+            ]
+        )

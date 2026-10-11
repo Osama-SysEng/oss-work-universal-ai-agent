@@ -3,10 +3,10 @@
 """
 
 from core.workflow import (
-    Workflow,
-    WorkflowStep,
-    WorkflowStatus,
     StepStatus,
+    Workflow,
+    WorkflowStatus,
+    WorkflowStep,
 )
 
 

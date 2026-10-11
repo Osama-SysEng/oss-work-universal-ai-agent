@@ -14,47 +14,50 @@ Capabilities (when approved):
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import base64
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from core.agents.base import BaseAgent
 from core.contracts import DecisionRecord, TaskResult
 from core.policy import Decision
 
-
 # ── Model URLs for browser-based AI queries ──────────────────
 
 MODEL_URLS = {
-    "gemini":     "https://gemini.google.com",
-    "chatgpt":    "https://chat.openai.com",
-    "claude":     "https://claude.ai",
-    "kimi":       "https://kimi.moonshot.cn",
-    "qwen":       "https://tongyi.aliyun.com",
-    "grok":       "https://x.com/i/grok",
+    "gemini": "https://gemini.google.com",
+    "chatgpt": "https://chat.openai.com",
+    "claude": "https://claude.ai",
+    "kimi": "https://kimi.moonshot.cn",
+    "qwen": "https://tongyi.aliyun.com",
+    "grok": "https://x.com/i/grok",
     "perplexity": "https://perplexity.ai",
 }
 
 # These selectors would be customized per model in production
 INPUT_SELECTORS = {
-    "gemini":     "textarea",
-    "chatgpt":    "textarea",
-    "claude":     "textarea",
-    "kimi":       "textarea",
+    "gemini": "textarea",
+    "chatgpt": "textarea",
+    "claude": "textarea",
+    "kimi": "textarea",
 }
 
 RESPONSE_SELECTORS = {
-    "gemini":     "[data-test-id='chat-message']",
-    "chatgpt":    "[data-testid='conversation-turn']",
-    "claude":     "[data-testid='message']",
-    "kimi":       ".stream-container",
+    "gemini": "[data-test-id='chat-message']",
+    "chatgpt": "[data-testid='conversation-turn']",
+    "claude": "[data-testid='message']",
+    "kimi": ".stream-container",
 }
 
 
 @dataclass
 class BrowserResult:
     """Structured browser operation result."""
+
     status: str
     action: str
     url: str | None = None
@@ -70,10 +73,10 @@ class BrowserResult:
 class BrowserAgent(BaseAgent):
     """
     Real browser agent using Playwright.
-    
+
     When OSS_WORK_SIMULATION_ONLY=1 or approval is not granted,
     operates in simulation mode (existing behavior).
-    
+
     When approved and Playwright is available:
     - Launches real browser
     - Navigates, scrapes, clicks, fills forms
@@ -115,6 +118,7 @@ class BrowserAgent(BaseAgent):
     def execute(self) -> dict[str, Any]:
         """Execute a browser task."""
         import time
+
         started = time.monotonic()
 
         task = str(self.context.get("task", "navigate"))
@@ -141,57 +145,62 @@ class BrowserAgent(BaseAgent):
                 decision.decision.value,
             )
             return self.finalize(
-                TaskResult("requires_approval", {
-                    "action": task,
-                    "url": url,
-                    "explanation": decision.reason,
-                }, decision=record).as_dict(),
+                TaskResult(
+                    "requires_approval",
+                    {
+                        "action": task,
+                        "url": url,
+                        "explanation": decision.reason,
+                    },
+                    decision=record,
+                ).as_dict(),
                 started,
             )
 
         # Real execution
         try:
-            from playwright.async_api import async_playwright
+            import playwright.async_api  # noqa: F401
+
             result = asyncio_run(self._launch_and_execute(task, url, started))
             return result
         except ImportError:
             return self._simulate(task, url, started)
         except Exception as e:
+            logger.exception("Unhandled exception in browser_agent.py")
             return self.finalize(
-                TaskResult("failed", {
-                    "action": task,
-                    "url": url,
-                    "error": str(e),
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "action": task,
+                        "url": url,
+                        "error": str(e),
+                    },
+                ).as_dict(),
                 started,
             )
-
 
     def _is_simulation_only(self) -> bool:
         """Check if running in simulation-only mode."""
         import os
+
         return os.getenv("OSS_WORK_SIMULATION_ONLY", "1") == "1"
 
     def _is_production_mode(self) -> bool:
         """Check if Playwright is available and not in simulation mode."""
         try:
             import playwright.async_api  # noqa: F401
+
             return not self._is_simulation_only()
         except ImportError:
             return False
 
-    async def _execute_task(
-        self, task: str, url: str | None, started: float, *, browser=None
-    ) -> dict[str, Any]:
+    async def _execute_task(self, task: str, url: str | None, started: float, *, browser=None) -> dict[str, Any]:
         """Execute the actual browser task."""
-        import asyncio
-        import time
 
         b = browser or self._browser
         if b is None:
             raise RuntimeError("No browser available")
         page = await b.new_page()
-        elapsed = 0.0
 
         try:
             if task == "navigate":
@@ -218,6 +227,7 @@ class BrowserAgent(BaseAgent):
     async def _navigate(self, page, url: str | None, started: float) -> dict[str, Any]:
         """Navigate to a URL and return page info."""
         import time
+
         if not url:
             return self.finalize(
                 TaskResult("failed", {"error": "No URL provided for navigation"}).as_dict(),
@@ -229,21 +239,23 @@ class BrowserAgent(BaseAgent):
         title = await page.title()
 
         return self.finalize(
-            TaskResult("completed", {
-                "action": "navigate",
-                "url": page.url,
-                "title": title,
-                "status": "navigated",
-                "elapsed_ms": round(elapsed, 2),
-            }).as_dict(),
+            TaskResult(
+                "completed",
+                {
+                    "action": "navigate",
+                    "url": page.url,
+                    "title": title,
+                    "status": "navigated",
+                    "elapsed_ms": round(elapsed, 2),
+                },
+            ).as_dict(),
             started,
         )
 
-    async def _scrape(
-        self, page, url: str | None, selector: str, started: float
-    ) -> dict[str, Any]:
+    async def _scrape(self, page, url: str | None, selector: str, started: float) -> dict[str, Any]:
         """Scrape content from a page."""
         import time
+
         if not url:
             return self.finalize(
                 TaskResult("failed", {"error": "No URL provided for scraping"}).as_dict(),
@@ -258,20 +270,24 @@ class BrowserAgent(BaseAgent):
         truncated = content[:10000] + ("..." if len(content) > 10000 else "")
 
         return self.finalize(
-            TaskResult("completed", {
-                "action": "scrape",
-                "url": page.url,
-                "selector": selector,
-                "content": truncated,
-                "full_length": len(content),
-                "elapsed_ms": round(elapsed, 2),
-            }).as_dict(),
+            TaskResult(
+                "completed",
+                {
+                    "action": "scrape",
+                    "url": page.url,
+                    "selector": selector,
+                    "content": truncated,
+                    "full_length": len(content),
+                    "elapsed_ms": round(elapsed, 2),
+                },
+            ).as_dict(),
             started,
         )
 
     async def _fill_form(self, page, url: str | None, started: float) -> dict[str, Any]:
         """Fill and optionally submit a form."""
         import time
+
         if not url:
             return self.finalize(
                 TaskResult("failed", {"error": "No URL provided"}).as_dict(),
@@ -286,11 +302,15 @@ class BrowserAgent(BaseAgent):
             try:
                 await page.fill(field_selector, str(value))
             except Exception as e:
+                logger.exception("Unhandled exception in browser_agent.py")
                 return self.finalize(
-                    TaskResult("failed", {
-                        "action": "fill_form",
-                        "error": f"Failed to fill field {field_selector}: {e}",
-                    }).as_dict(),
+                    TaskResult(
+                        "failed",
+                        {
+                            "action": "fill_form",
+                            "error": f"Failed to fill field {field_selector}: {e}",
+                        },
+                    ).as_dict(),
                     started,
                 )
 
@@ -299,28 +319,36 @@ class BrowserAgent(BaseAgent):
                 await page.click(submit_selector)
                 await page.wait_for_load_state("networkidle", timeout=10000)
             except Exception as e:
+                logger.exception("Unhandled exception in browser_agent.py")
                 return self.finalize(
-                    TaskResult("failed", {
-                        "action": "fill_form",
-                        "error": f"Failed to submit: {e}",
-                    }).as_dict(),
+                    TaskResult(
+                        "failed",
+                        {
+                            "action": "fill_form",
+                            "error": f"Failed to submit: {e}",
+                        },
+                    ).as_dict(),
                     started,
                 )
 
         elapsed = (time.monotonic() - started) * 1000
         return self.finalize(
-            TaskResult("completed", {
-                "action": "fill_form",
-                "fields_filled": list(fields.keys()),
-                "submitted": bool(submit_selector),
-                "elapsed_ms": round(elapsed, 2),
-            }).as_dict(),
+            TaskResult(
+                "completed",
+                {
+                    "action": "fill_form",
+                    "fields_filled": list(fields.keys()),
+                    "submitted": bool(submit_selector),
+                    "elapsed_ms": round(elapsed, 2),
+                },
+            ).as_dict(),
             started,
         )
 
     async def _screenshot(self, page, url: str | None, started: float) -> dict[str, Any]:
         """Take a screenshot of a page."""
         import time
+
         if not url:
             return self.finalize(
                 TaskResult("failed", {"error": "No URL provided"}).as_dict(),
@@ -334,26 +362,31 @@ class BrowserAgent(BaseAgent):
         b64 = base64.b64encode(screenshot).decode("ascii") if screenshot else None
 
         return self.finalize(
-            TaskResult("completed", {
-                "action": "screenshot",
-                "url": page.url,
-                "screenshot_b64": b64,
-                "screenshot_size_bytes": len(screenshot) if screenshot else 0,
-                "elapsed_ms": round(elapsed, 2),
-            }).as_dict(),
+            TaskResult(
+                "completed",
+                {
+                    "action": "screenshot",
+                    "url": page.url,
+                    "screenshot_b64": b64,
+                    "screenshot_size_bytes": len(screenshot) if screenshot else 0,
+                    "elapsed_ms": round(elapsed, 2),
+                },
+            ).as_dict(),
             started,
         )
 
-    async def _click(
-        self, page, url: str | None, selector: str | None, started: float
-    ) -> dict[str, Any]:
+    async def _click(self, page, url: str | None, selector: str | None, started: float) -> dict[str, Any]:
         """Click an element on a page."""
         import time
+
         if not url or not selector:
             return self.finalize(
-                TaskResult("failed", {
-                    "error": "URL and selector required for click",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "error": "URL and selector required for click",
+                    },
+                ).as_dict(),
                 started,
             )
 
@@ -362,18 +395,22 @@ class BrowserAgent(BaseAgent):
         elapsed = (time.monotonic() - started) * 1000
 
         return self.finalize(
-            TaskResult("completed", {
-                "action": "click",
-                "url": page.url,
-                "selector": selector,
-                "elapsed_ms": round(elapsed, 2),
-            }).as_dict(),
+            TaskResult(
+                "completed",
+                {
+                    "action": "click",
+                    "url": page.url,
+                    "selector": selector,
+                    "elapsed_ms": round(elapsed, 2),
+                },
+            ).as_dict(),
             started,
         )
 
     async def _extract_links(self, page, url: str | None, started: float) -> dict[str, Any]:
         """Extract all links from a page."""
         import time
+
         if not url:
             return self.finalize(
                 TaskResult("failed", {"error": "No URL provided"}).as_dict(),
@@ -381,23 +418,23 @@ class BrowserAgent(BaseAgent):
             )
 
         await page.goto(url, wait_until="networkidle", timeout=30000)
-        links = await page.eval_on_selector_all(
-            "a[href]",
-            "els => els.map(e => e.href)"
-        )
+        links = await page.eval_on_selector_all("a[href]", "els => els.map(e => e.href)")
         elapsed = (time.monotonic() - started) * 1000
 
         # Deduplicate and limit
         unique = list(dict.fromkeys(links))[:100]
 
         return self.finalize(
-            TaskResult("completed", {
-                "action": "extract_links",
-                "url": page.url,
-                "links_count": len(unique),
-                "links": unique,
-                "elapsed_ms": round(elapsed, 2),
-            }).as_dict(),
+            TaskResult(
+                "completed",
+                {
+                    "action": "extract_links",
+                    "url": page.url,
+                    "links_count": len(unique),
+                    "links": unique,
+                    "elapsed_ms": round(elapsed, 2),
+                },
+            ).as_dict(),
             started,
         )
 
@@ -408,6 +445,7 @@ class BrowserAgent(BaseAgent):
         Requires user to be logged into the model's website.
         """
         import time
+
         model = self.context.get("model", "gemini")
         prompt = self.context.get("prompt", "")
 
@@ -420,9 +458,12 @@ class BrowserAgent(BaseAgent):
         url = MODEL_URLS.get(model)
         if not url:
             return self.finalize(
-                TaskResult("failed", {
-                    "error": f"Unknown model: {model}. Supported: {list(MODEL_URLS.keys())}",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "error": f"Unknown model: {model}. Supported: {list(MODEL_URLS.keys())}",
+                    },
+                ).as_dict(),
                 started,
             )
 
@@ -438,40 +479,51 @@ class BrowserAgent(BaseAgent):
             try:
                 await page.wait_for_selector(resp_sel, timeout=60000)
                 response = await page.inner_text(resp_sel)
-            except Exception:
+            except Exception as _exc:
+                logger.exception("Unhandled exception in browser_agent.py")
                 # Response might not have loaded yet
+                import asyncio
+
                 await asyncio.sleep(5)
                 response = await page.inner_text("body")
 
             elapsed = (time.monotonic() - started) * 1000
 
             return self.finalize(
-                TaskResult("completed", {
-                    "action": "ai_model_query",
-                    "model": model,
-                    "prompt_length": len(prompt),
-                    "response_preview": response[:2000],
-                    "response_full_length": len(response),
-                    "elapsed_ms": round(elapsed, 2),
-                }).as_dict(),
+                TaskResult(
+                    "completed",
+                    {
+                        "action": "ai_model_query",
+                        "model": model,
+                        "prompt_length": len(prompt),
+                        "response_preview": response[:2000],
+                        "response_full_length": len(response),
+                        "elapsed_ms": round(elapsed, 2),
+                    },
+                ).as_dict(),
                 started,
             )
         except Exception as e:
+            logger.exception("Unhandled exception in browser_agent.py")
             elapsed = (time.monotonic() - started) * 1000
             return self.finalize(
-                TaskResult("failed", {
-                    "action": "ai_model_query",
-                    "model": model,
-                    "error": str(e),
-                    "note": "Ensure you are logged into the model's website in the browser.",
-                    "elapsed_ms": round(elapsed, 2),
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "action": "ai_model_query",
+                        "model": model,
+                        "error": str(e),
+                        "note": "Ensure you are logged into the model's website in the browser.",
+                        "elapsed_ms": round(elapsed, 2),
+                    },
+                ).as_dict(),
                 started,
             )
 
     async def _launch_and_execute(self, task: str, url: str | None, started: float) -> dict[str, Any]:
         """Launch browser and execute task — async entry point from sync execute()."""
         from playwright.async_api import async_playwright
+
         async with async_playwright() as p:
             browser = await p.chromium.launch(
                 headless=self.context.get("headless", True),
@@ -486,15 +538,23 @@ class BrowserAgent(BaseAgent):
     def _unknown_task(self, task: str, url: str | None, started: float) -> dict[str, Any]:
         """Handle unknown browser tasks."""
         return self.finalize(
-            TaskResult("failed", {
-                "action": task,
-                "url": url,
-                "error": f"Unknown browser task: {task}",
-                "supported_tasks": [
-                    "navigate", "scrape", "fill_form", "screenshot",
-                    "click", "extract_links", "ai_model_query",
-                ],
-            }).as_dict(),
+            TaskResult(
+                "failed",
+                {
+                    "action": task,
+                    "url": url,
+                    "error": f"Unknown browser task: {task}",
+                    "supported_tasks": [
+                        "navigate",
+                        "scrape",
+                        "fill_form",
+                        "screenshot",
+                        "click",
+                        "extract_links",
+                        "ai_model_query",
+                    ],
+                },
+            ).as_dict(),
             started,
         )
 
@@ -530,18 +590,19 @@ class BrowserAgent(BaseAgent):
         if self._browser:
             try:
                 await self._browser.close()
-            except Exception:
-                pass
+            except Exception as _exc:
+                logger.exception("Suppressed exception in browser_agent.py")
             self._browser = None
         if self._playwright:
             try:
                 await self._playwright.__aexit__(None, None, None)
-            except Exception:
-                pass
+            except Exception as _exc:
+                logger.exception("Suppressed exception in browser_agent.py")
             self._playwright = None
 
 
 # ── Async helper for sync contexts ───────────────────────────
+
 
 async def _async_run(coro):
     """Run a coroutine and return its result."""
@@ -552,6 +613,7 @@ def asyncio_run(coro):
     """Run an async coroutine from a sync context."""
     try:
         import asyncio
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -559,6 +621,6 @@ def asyncio_run(coro):
             asyncio.set_event_loop(loop)
             return loop.run_until_complete(coro)
         return asyncio.run(coro)
-    except Exception:
+    except Exception as _exc:
+        logger.exception("Unhandled exception in browser_agent.py")
         return None
-

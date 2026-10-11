@@ -1,4 +1,5 @@
 """Safe OSS-Work runtime entrypoint."""
+
 from __future__ import annotations
 
 import json
@@ -17,6 +18,7 @@ def run(task: str, *, user_id: str = "local", context: dict[str, Any] | None = N
 
 def main() -> None:
     import argparse
+
     parser = argparse.ArgumentParser(description=f"{PROJECT_NAME} safe local CLI")
     parser.add_argument("task", nargs="?", default="status")
     parser.add_argument("--user", default="local")

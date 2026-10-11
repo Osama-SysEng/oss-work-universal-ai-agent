@@ -7,15 +7,14 @@ Covers: core imagine flow, multi-domain, simulation, invention,
 
 from __future__ import annotations
 
-import asyncio
 import time
 
 import pytest
 
 from core.imagination.contracts import (
-    Thread,
-    Simulation,
     ImaginationEngineConfig,
+    Simulation,
+    Thread,
 )
 from core.imagination.engine import ImaginationResult
 
@@ -260,9 +259,9 @@ class TestUltraIQSimulate:
 
     @pytest.mark.asyncio
     async def test_data_dir_respected(self):
-        from core.imagination.engine import UltraIQE
-        from pathlib import Path
         import tempfile
+
+        from core.imagination.engine import UltraIQE
 
         with tempfile.TemporaryDirectory() as tmpdir:
             engine = UltraIQE(config=ImaginationEngineConfig(data_dir=tmpdir))

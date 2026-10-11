@@ -3,6 +3,7 @@
 This module can inspect a local manifest and verify a supplied artifact hash. It
 does not download, extract, install, execute, or hot-reload untrusted code.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -19,15 +20,29 @@ class Updater:
             return {"status": "failed", "error": "artifact not found", "install_attempted": False}
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         valid = digest.lower() == expected_sha256.lower()
-        return {"status": "review_required" if valid else "rejected", "sha256": digest, "hash_matches": valid, "install_attempted": False, "message": "Manual review and staged rollout are required; no installation was attempted."}
+        return {
+            "status": "review_required" if valid else "rejected",
+            "sha256": digest,
+            "hash_matches": valid,
+            "install_attempted": False,
+            "message": "Manual review and staged rollout are required; no installation was attempted.",
+        }
 
     def install_update(self, *_: object, **__: object) -> dict[str, object]:
-        return {"status": "denied", "install_attempted": False, "reason": "Automatic update installation is disabled in the safe release."}
+        return {
+            "status": "denied",
+            "install_attempted": False,
+            "reason": "Automatic update installation is disabled in the safe release.",
+        }
 
 
 class SkillDownloader:
     def download_skill(self, *_: object, **__: object) -> dict[str, object]:
-        return {"status": "denied", "install_attempted": False, "reason": "Runtime skill download and package installation are disabled."}
+        return {
+            "status": "denied",
+            "install_attempted": False,
+            "reason": "Runtime skill download and package installation are disabled.",
+        }
 
 
 if __name__ == "__main__":

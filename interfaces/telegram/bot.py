@@ -5,7 +5,10 @@ text + voice + image + document → multi-agent pipeline → formatted response.
 
 from __future__ import annotations
 
-import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
+
 import io
 import json
 import os
@@ -14,18 +17,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
-    CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
+    CommandHandler,
     ContextTypes,
+    MessageHandler,
     filters,
 )
 
-from core.contracts import TaskRequest
 from core.agents.orchestrator import OrchestratorAgent
+from core.contracts import TaskRequest
 
 
 @dataclass
@@ -40,7 +43,6 @@ class BotConfig:
 
 
 class OSSWorkTelegramBot:
-
     WELCOME = """
 🤖 *OSS Work — Universal AI Agent*
 
@@ -117,10 +119,12 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
     async def cmd_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         user = update.effective_user
         text = self.WELCOME
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚀 ابدأ الآن", callback_data="start_task")],
-            [InlineKeyboardButton("❓ مساعدة", callback_data="help")],
-        ])
+        kb = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("🚀 ابدأ الآن", callback_data="start_task")],
+                [InlineKeyboardButton("❓ مساعدة", callback_data="help")],
+            ]
+        )
         await update.message.reply_text(text, parse_mode="Markdown", reply_markup=kb)
         await self._log(user.id, "command", "start")
 
@@ -145,6 +149,7 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
     async def cmd_models(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         try:
             from core.services.model_router import get_router
+
             router = get_router()
             models = "\n".join(
                 "• " + m.name + " (" + m.provider.value + ") — " + m.category
@@ -155,6 +160,7 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
                 parse_mode="Markdown",
             )
         except Exception as e:
+            logger.exception("Unhandled exception in bot.py")
             await update.message.reply_text("خطأ: " + str(e))
         await self._log(update.effective_user.id, "command", "models")
 
@@ -194,6 +200,7 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
             await self._log(uid, "task", task[:100], result.get("status", ""))
             self._history.setdefault(uid, []).append({"task": task[:100], "status": result.get("status", "")})
         except Exception as e:
+            logger.exception("Unhandled exception in bot.py")
             await msg.reply_text("❌ خطأ: " + str(e))
         finally:
             self._busy.discard(uid)
@@ -217,6 +224,7 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
             msg.text = text
             await self.handle_text(update, context)
         except Exception as e:
+            logger.exception("Unhandled exception in bot.py")
             await msg.reply_text("❌ خطأ: " + str(e))
         finally:
             self._busy.discard(uid)
@@ -239,6 +247,7 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
             msg.text = desc
             await self.handle_text(update, context)
         except Exception as e:
+            logger.exception("Unhandled exception in bot.py")
             await msg.reply_text("❌ خطأ: " + str(e))
         finally:
             self._busy.discard(uid)
@@ -268,6 +277,7 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
             msg.text = task[:2000]
             await self.handle_text(update, context)
         except Exception as e:
+            logger.exception("Unhandled exception in bot.py")
             await msg.reply_text("❌ خطأ: " + str(e))
         finally:
             self._busy.discard(uid)
@@ -283,55 +293,66 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
     async def _complete_thought(self, task: str, uid: str) -> str:
         try:
             from core.imagination.engine import UltraIQEngine
+
             engine = UltraIQEngine(max_threads=10, simulation_depth=5)
             return engine.complete_thought(task, {"user_id": uid})
-        except Exception:
+        except Exception as _exc:
+            logger.exception("Unhandled exception in bot.py")
             return task
 
     async def _transcribe(self, audio: bytes) -> str:
         try:
             import whisper
+
             model = whisper.load_model("base")
             result = model.transcribe(audio)
             return result.get("text", "")
         except ImportError:
             return "[ whisper غير مثبت ]"
         except Exception as e:
+            logger.exception("Unhandled exception in bot.py")
             return "[ خطأ: " + str(e) + " ]"
 
     async def _describe_image(self, img: bytes, caption: str) -> str:
         try:
             from core.services.model_router import get_router
+
             router = get_router()
             prompt = "Describe this image. Caption: " + caption
             r = await router.complete(prompt, {"max_tokens": 500})
             return r.get("response", "[ could not analyze ]")
         except Exception as e:
+            logger.exception("Unhandled exception in bot.py")
             return "[ error: " + str(e) + " ]"
 
     async def _read_doc(self, data: bytes, ext: str) -> str:
         if ext in (".txt", ".md", ".py", ".js", ".ts", ".json", ".csv", ".html", ".css", ".xml"):
             try:
                 return data.decode("utf-8", errors="replace")
-            except Exception:
+            except Exception as _exc:
+                logger.exception("Unhandled exception in bot.py")
                 return "[ تعذر فك التشفير ]"
         elif ext == ".docx":
             try:
                 import docx as docx_mod
+
                 d = docx_mod.Document(io.BytesIO(data))
                 return "\n".join(p.text for p in d.paragraphs)
             except ImportError:
                 return "[ يحتاج python-docx ]"
             except Exception as e:
+                logger.exception("Unhandled exception in bot.py")
                 return "[ خطأ: " + str(e) + " ]"
         elif ext == ".pdf":
             try:
                 import fitz
+
                 d = fitz.open(stream=io.BytesIO(data), filetype="pdf")
                 return "\n".join(page.get_text() for page in d)
             except ImportError:
                 return "[ يحتاج PyMuPDF ]"
             except Exception as e:
+                logger.exception("Unhandled exception in bot.py")
                 return "[ خطأ: " + str(e) + " ]"
         else:
             return "[ نوع غير مدعوم: " + ext + " ]"
@@ -352,15 +373,23 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
             text = str(result)[:500]
         kb = InlineKeyboardMarkup([])
         if status == "requires_approval":
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ approve", callback_data="approve"),
-                 InlineKeyboardButton("❌ رفض", callback_data="reject")],
-            ])
+            kb = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton("✅ approve", callback_data="approve"),
+                        InlineKeyboardButton("❌ رفض", callback_data="reject"),
+                    ],
+                ]
+            )
         elif status == "completed":
-            kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔁 تكرار", callback_data="repeat"),
-                 InlineKeyboardButton("📋 تفاصيل", callback_data="details")],
-            ])
+            kb = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton("🔁 تكرار", callback_data="repeat"),
+                        InlineKeyboardButton("📋 تفاصيل", callback_data="details"),
+                    ],
+                ]
+            )
         return text, kb
 
     def _fmt_data(self, data: dict[str, Any]) -> str:
@@ -384,8 +413,8 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
             entry = {"ts": time.time(), "kind": kind, "data": str(data)[:500], "status": status}
             existing = f.read_text(encoding="utf-8", errors="replace") if f.exists() else ""
             f.write_text(existing + json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
-        except Exception:
-            pass
+        except Exception as _exc:
+            logger.exception("Suppressed exception in bot.py")
 
 
 def create_bot(token: str, admin_ids: list[str] | None = None) -> OSSWorkTelegramBot:

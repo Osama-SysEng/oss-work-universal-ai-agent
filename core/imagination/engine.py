@@ -16,16 +16,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from core.contracts import TaskResult
-
-
 # ═══════════════════════════════════════════════════════════════
 # CONTRACTS
 # ═══════════════════════════════════════════════════════════════
 
+
 @dataclass
 class Thread:
     """A single parallel reasoning thread exploring one domain."""
+
     domain: str
     approach: str
     outcome: str
@@ -37,6 +36,7 @@ class Thread:
 @dataclass
 class Simulation:
     """A future timeline branch from Tesla-style simulation."""
+
     timeline: str
     outcome: str
     probability: float
@@ -47,6 +47,7 @@ class Simulation:
 @dataclass
 class ImaginationResult:
     """The final output of the Imagination Engine."""
+
     solution: str
     reasoning_chain: list[str]
     confidence: float
@@ -64,18 +65,45 @@ class ImaginationResult:
 # ═══════════════════════════════════════════════════════════════
 
 DOMAINS = [
-    "engineering", "biology", "history", "mathematics",
-    "psychology", "physics", "military", "economics",
-    "medicine", "art", "linguistics", "philosophy",
-    "computer_science", "astronomy", "chemistry",
-    "geology", "meteorology", "oceanography",
-    "sociology", "anthropology", "archaeology",
-    "law", "ethics", "political_science",
-    "business", "finance", "marketing",
-    "education", "logistics", "manufacturing",
-    "agriculture", "architecture", "design",
-    "music", "theater", "film",
-    "sports", "nutrition", "fitness",
+    "engineering",
+    "biology",
+    "history",
+    "mathematics",
+    "psychology",
+    "physics",
+    "military",
+    "economics",
+    "medicine",
+    "art",
+    "linguistics",
+    "philosophy",
+    "computer_science",
+    "astronomy",
+    "chemistry",
+    "geology",
+    "meteorology",
+    "oceanography",
+    "sociology",
+    "anthropology",
+    "archaeology",
+    "law",
+    "ethics",
+    "political_science",
+    "business",
+    "finance",
+    "marketing",
+    "education",
+    "logistics",
+    "manufacturing",
+    "agriculture",
+    "architecture",
+    "design",
+    "music",
+    "theater",
+    "film",
+    "sports",
+    "nutrition",
+    "fitness",
 ]
 
 # First principles per domain (atomic truths for invention)
@@ -156,14 +184,15 @@ CROSS_DOMAIN_PATTERNS = [
 # ULTRA IQ ENGINE
 # ═══════════════════════════════════════════════════════════════
 
+
 class UltraIQEngine:
     """
     The Imagination Engine — OSS Work's cognitive core.
-    
+
     Runs parallel reasoning threads across 50+ domains,
     synthesizes cross-domain patterns, simulates futures,
     and invents novel solutions when no known approach exists.
-    
+
     Inspired by Osama Mohamed Fathy's cognitive style:
     - 300B parallel cognitive threads (conceptually)
     - Cross-domain pattern synthesis
@@ -180,13 +209,13 @@ class UltraIQEngine:
         simulation_depth: int = 100,
         domains: int = 50,
         data_dir: str | None = None,
-        config: ImaginationEngineConfig | None = None,
+        config: Any | None = None,
     ) -> None:
         if config is not None:
             self.max_threads = min(config.max_threads, 1000)
             self.invention_enabled = config.invention_enabled
             self.simulation_depth = config.simulation_depth
-            self.active_domains = DOMAINS[:config.domains]
+            self.active_domains = DOMAINS[: config.domains]
             self.data_dir = Path(config.data_dir or "./data/imagination")
         else:
             self.max_threads = min(max_threads, 1000)
@@ -196,16 +225,14 @@ class UltraIQEngine:
             self.data_dir = Path(data_dir or "./data/imagination")
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self._memory: dict[str, Any] = {}
-        self._session_id = hashlib.sha256(
-            f"{time.time()}".encode()
-        ).hexdigest()[:16]
+        self._session_id = hashlib.sha256(f"{time.time()}".encode()).hexdigest()[:16]
 
     # ── PUBLIC API ──────────────────────────────────────────
 
     async def process(self, task: str, context: dict[str, Any] | None = None) -> ImaginationResult:
         """
         Process a task through the full imagination pipeline.
-        
+
         Phase 1: Parallel exploration across domains
         Phase 2: Cross-domain pattern synthesis
         Phase 3: Future simulation (Tesla mode)
@@ -259,10 +286,10 @@ class UltraIQEngine:
     def complete_thought(self, partial_input: str, context: dict[str, Any] | None = None) -> str:
         """
         Thought completion: understands intent before user finishes.
-        
+
         Maps the cognitive vector of incoming partial thought
         and returns the likely completed thought + intent.
-        
+
         Used by Telegram interface to finish user's message
         before they send it.
         """
@@ -351,8 +378,6 @@ class UltraIQEngine:
 
     def _select_approach(self, task: str, domain: str) -> str:
         """Select the best reasoning approach for a domain-task pair."""
-        task_lower = task.lower()
-
         # Domain-specific approaches
         domain_approaches = {
             "engineering": f"Engineer a robust solution for: {task[:80]}",
@@ -407,17 +432,74 @@ class UltraIQEngine:
     def _domain_relevance(self, domain: str, task: str) -> float:
         """Estimate how relevant a domain is to a task."""
         domain_keywords = {
-            "engineering": ["build", "create", "construct", "implement", "system", "design", "code", "develop", "engineer"],
-            "computer_science": ["algorithm", "code", "program", "software", "data", "api", "database", "system", "automation"],
-            "mathematics": ["calculate", "compute", "formula", "equation", "statistics", "probability", "optimization", "algorithm"],
+            "engineering": [
+                "build",
+                "create",
+                "construct",
+                "implement",
+                "system",
+                "design",
+                "code",
+                "develop",
+                "engineer",
+            ],
+            "computer_science": [
+                "algorithm",
+                "code",
+                "program",
+                "software",
+                "data",
+                "api",
+                "database",
+                "system",
+                "automation",
+            ],
+            "mathematics": [
+                "calculate",
+                "compute",
+                "formula",
+                "equation",
+                "statistics",
+                "probability",
+                "optimization",
+                "algorithm",
+            ],
             "biology": ["life", "organism", "cell", "evolution", "genetic", "species", "ecosystem", "biological"],
             "physics": ["energy", "force", "motion", "quantum", "relativity", "particle", "wave", "thermodynamics"],
-            "psychology": ["behavior", "mind", "cognitive", "emotion", "personality", "motivation", "perception", "learning"],
+            "psychology": [
+                "behavior",
+                "mind",
+                "cognitive",
+                "emotion",
+                "personality",
+                "motivation",
+                "perception",
+                "learning",
+            ],
             "economics": ["market", "price", "supply", "demand", "cost", "investment", "trade", "growth", "inflation"],
-            "business": ["plan", "strategy", "market", "product", "customer", "revenue", "team", "management", "startup"],
+            "business": [
+                "plan",
+                "strategy",
+                "market",
+                "product",
+                "customer",
+                "revenue",
+                "team",
+                "management",
+                "startup",
+            ],
             "history": ["past", "ancient", "war", "civilization", "colonial", "revolution", "empire", "culture"],
             "art": ["design", "create", "creative", "visual", "music", "story", "aesthetic", "innovation"],
-            "philosophy": ["meaning", "truth", "ethics", "existence", "consciousness", "knowledge", "logic", "metaphysics"],
+            "philosophy": [
+                "meaning",
+                "truth",
+                "ethics",
+                "existence",
+                "consciousness",
+                "knowledge",
+                "logic",
+                "metaphysics",
+            ],
             "law": ["legal", "rights", "regulation", "court", "policy", "compliance", "contract", "jurisdiction"],
             "military": ["strategy", "tactics", "defense", "security", "operations", "command", "intelligence"],
             "medicine": ["health", "disease", "treatment", "diagnosis", "patient", "clinical", "therapy", "symptom"],
@@ -479,10 +561,7 @@ class UltraIQEngine:
             if domain in pattern["domains"]:
                 for other_domain in pattern["domains"]:
                     if other_domain != domain and other_domain in self.active_domains:
-                        connections.append(
-                            f"{domain}↔{other_domain}: {pattern['name']} — "
-                            f"{pattern['description']}"
-                        )
+                        connections.append(f"{domain}↔{other_domain}: {pattern['name']} — {pattern['description']}")
 
         return connections[:3]  # Limit to top 3
 
@@ -504,22 +583,19 @@ class UltraIQEngine:
 
             # Check if any thread's domain matches
             for thread in threads:
-                if thread.domain in pattern["domains"] and thread.confidence > 0.5:
-                    if pattern["name"] not in activated:
-                        activated.append(pattern["name"])
+                if thread.domain in pattern["domains"] and thread.confidence > 0.5 and pattern["name"] not in activated:
+                    activated.append(pattern["name"])
 
         return activated
 
     # ── PHASE 3: FUTURE SIMULATION ─────────────────────────
 
-    def _simulate_futures(
-        self, task: str, patterns: list[str], context: dict[str, Any]
-    ) -> list[Simulation]:
+    def _simulate_futures(self, task: str, patterns: list[str], context: dict[str, Any]) -> list[Simulation]:
         """
         Tesla Mode: simulate complete futures before acting.
         Runs multiple timeline branches and returns
         a probability-weighted outcome landscape.
-        
+
         Each simulation explores: what happens if we take
         this approach, over different time horizons?
         """
@@ -532,23 +608,49 @@ class UltraIQEngine:
             probability = self._estimate_probability(task, i, patterns)
             failure_modes = self._identify_failure_modes(task, outcome)
 
-            simulations.append(Simulation(
-                timeline=f"Branch_{i+1:03d}",
-                outcome=outcome,
-                probability=probability,
-                failure_modes=failure_modes,
-                time_horizons=horizon,
-            ))
+            simulations.append(
+                Simulation(
+                    timeline=f"Branch_{i + 1:03d}",
+                    outcome=outcome,
+                    probability=probability,
+                    failure_modes=failure_modes,
+                    time_horizons=horizon,
+                )
+            )
 
         return simulations
 
     def _select_horizon(self, index: int) -> dict[str, str]:
         """Select time horizons for a simulation branch."""
         horizons = {
-            0: {"1h": "immediate action taken", "1d": "initial results visible", "1w": "pattern established", "1m": "system stable", "1y": "long-term impact assessed"},
-            1: {"1h": "prepation phase", "1d": "execution begins", "1w": "first milestone", "1m": "scaling phase", "1y": "mature operation"},
-            2: {"1h": "delayed start", "1d": "catching up", "1w": "compressed timeline", "1m": "adjusted expectations", "1y": "recovered trajectory"},
-            3: {"1h": "alternative path chosen", "1d": "new approach tested", "1w": "early indicators", "1m": "pivot or persevere", "1y": "transformed outcome"},
+            0: {
+                "1h": "immediate action taken",
+                "1d": "initial results visible",
+                "1w": "pattern established",
+                "1m": "system stable",
+                "1y": "long-term impact assessed",
+            },
+            1: {
+                "1h": "prepation phase",
+                "1d": "execution begins",
+                "1w": "first milestone",
+                "1m": "scaling phase",
+                "1y": "mature operation",
+            },
+            2: {
+                "1h": "delayed start",
+                "1d": "catching up",
+                "1w": "compressed timeline",
+                "1m": "adjusted expectations",
+                "1y": "recovered trajectory",
+            },
+            3: {
+                "1h": "alternative path chosen",
+                "1d": "new approach tested",
+                "1w": "early indicators",
+                "1m": "pivot or persevere",
+                "1y": "transformed outcome",
+            },
         }
         return horizons.get(index % len(horizons), horizons[0])
 
@@ -563,7 +665,7 @@ class UltraIQEngine:
         elif index == 3:
             return f"Transformative outcome: solving '{task[:60]}' opens adjacent opportunities. The approach creates unexpected value in related domains. Net impact exceeds original scope."
         else:
-            return f"Simulation branch {index+1}: exploring alternative execution path for '{task[:60]}'. Outcome depends on specific conditions met along the way."
+            return f"Simulation branch {index + 1}: exploring alternative execution path for '{task[:60]}'. Outcome depends on specific conditions met along the way."
 
     def _estimate_probability(self, task: str, index: int, patterns: list[str]) -> float:
         """Estimate probability of a simulation branch."""
@@ -588,7 +690,6 @@ class UltraIQEngine:
     def _identify_failure_modes(self, task: str, outcome: str) -> list[str]:
         """Identify potential failure modes for a simulation."""
         modes = []
-        task_lower = task.lower()
 
         if "efficiency" in outcome.lower() or "efficiently" in outcome.lower():
             modes.append("execution speed slower than projected")
@@ -607,12 +708,10 @@ class UltraIQEngine:
 
     # ── PHASE 4: INVENTION CHAMBER ─────────────────────────
 
-    async def _invention_chamber(
-        self, task: str, patterns: list[str], context: dict[str, Any]
-    ) -> str:
+    async def _invention_chamber(self, task: str, patterns: list[str], context: dict[str, Any]) -> str:
         """
         Genuine invention — when no known solution exists.
-        
+
         Process:
         1. Void state: clear all retrieved knowledge
         2. First principles: rebuild from atomic truths only
@@ -655,9 +754,7 @@ class UltraIQEngine:
 
         return relevant
 
-    def _synthesize_from_axioms(
-        self, axioms: list[str], task: str, patterns: list[str]
-    ) -> str:
+    def _synthesize_from_axioms(self, axioms: list[str], task: str, patterns: list[str]) -> str:
         """Synthesize a novel approach from first principles."""
         # Build a creative solution from axioms
         synthesis_parts = []
@@ -669,7 +766,7 @@ class UltraIQEngine:
 
         synthesis_parts.append("→ Synthesis: Combining these truths yields a novel approach:")
         synthesis_parts.append(
-            f"→ Approach: Design a solution for \"{task[:60]}\" that respects "
+            f'→ Approach: Design a solution for "{task[:60]}" that respects '
             f"the fundamental tradeoffs, anticipates failure modes, and leverages "
             f"cross-domain patterns including {', '.join(patterns[:2]) if patterns else 'general principles'}."
         )
@@ -683,8 +780,7 @@ class UltraIQEngine:
     def _validate_against_reality(self, approach: str, task: str) -> bool:
         """Validate an invented approach against reality constraints."""
         # Check for impossibility markers
-        impossible = ["perpetual motion", "faster than light", "infinite",
-                      "violates conservation", "zero energy"]
+        impossible = ["perpetual motion", "faster than light", "infinite", "violates conservation", "zero energy"]
 
         approach_lower = approach.lower()
         for marker in impossible:
@@ -732,21 +828,10 @@ class UltraIQEngine:
         # Select best thread
         best_thread = max(threads, key=lambda t: t.confidence) if threads else None
 
-        # Weight simulations by probability
-        total_prob = sum(s.probability for s in simulations)
-        if total_prob > 0:
-            weighted_outcome = max(
-                simulations, key=lambda s: s.probability
-            ).outcome
-        else:
-            weighted_outcome = "No conclusive simulation data."
-
         # Build reasoning chain
         reasoning_chain = []
         if best_thread:
-            reasoning_chain.append(
-                f"Best domain: {best_thread.domain} (confidence: {best_thread.confidence:.2f})"
-            )
+            reasoning_chain.append(f"Best domain: {best_thread.domain} (confidence: {best_thread.confidence:.2f})")
             reasoning_chain.append(f"Approach: {best_thread.approach[:100]}")
 
         if patterns:
@@ -754,9 +839,7 @@ class UltraIQEngine:
 
         if simulations:
             top_sim = max(simulations, key=lambda s: s.probability)
-            reasoning_chain.append(
-                f"Most likely outcome (p={top_sim.probability:.2f}): {top_sim.outcome[:100]}"
-            )
+            reasoning_chain.append(f"Most likely outcome (p={top_sim.probability:.2f}): {top_sim.outcome[:100]}")
 
         if invented:
             reasoning_chain.append("Invented solution from first principles")
@@ -814,9 +897,7 @@ class UltraIQEngine:
 
     # ── BATCH PROCESSING ───────────────────────────────────
 
-    async def process_batch(
-        self, tasks: list[str], context: dict[str, Any] | None = None
-    ) -> list[ImaginationResult]:
+    async def process_batch(self, tasks: list[str], context: dict[str, Any] | None = None) -> list[ImaginationResult]:
         """Process multiple tasks in parallel."""
         semaphore = asyncio.Semaphore(self.max_threads)
 
@@ -852,6 +933,7 @@ def reset_engine() -> None:
 # CLI DEMO / TEST
 # ═══════════════════════════════════════════════════════════════
 
+
 async def demo() -> None:
     """Run a quick demo of the Imagination Engine."""
     engine = UltraIQEngine(max_threads=50, simulation_depth=10)
@@ -864,9 +946,9 @@ async def demo() -> None:
         "Write code for a web dashboard with real-time updates",
     ]
 
-    print(f"\n{'='*60}")
-    print(f"Ultra IQ Imagination Engine — Demo")
-    print(f"{'='*60}\n")
+    print(f"\n{'=' * 60}")
+    print("Ultra IQ Imagination Engine — Demo")
+    print(f"{'=' * 60}\n")
 
     for task in test_tasks:
         result = await engine.process(task)
@@ -890,9 +972,8 @@ UltraIQE = UltraIQEngine
 
 # ── Public API ────────────────────────────────────────────────
 
-async def imagine(
-    self, task: str, requirements: dict[str, Any] | None = None
-) -> ImaginationResult:
+
+async def imagine(self, task: str, requirements: dict[str, Any] | None = None) -> ImaginationResult:
     """Public API alias: process → imagine."""
     return await self.process(task)
 

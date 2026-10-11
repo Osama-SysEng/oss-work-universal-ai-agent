@@ -7,8 +7,6 @@
 
 import pytest
 
-from pathlib import Path
-
 from core.advanced import TaskManager, TaskPriority, TaskStatus
 from core.agent_registry import (
     AgentCapability,
@@ -19,10 +17,10 @@ from core.agent_registry import (
     create_default_registry,
 )
 
-
 # =============================================================================
 # Agent Registry Tests
 # =============================================================================
+
 
 def test_agent_registry_registration():
     registry = AgentRegistry()
@@ -133,6 +131,7 @@ def test_default_registries():
 # =============================================================================
 # Task Manager Tests
 # =============================================================================
+
 
 def test_task_manager_create_task():
     manager = TaskManager()
@@ -253,6 +252,7 @@ def test_task_priorities_ordering():
 # =============================================================================
 # Knowledge Base Tests
 # =============================================================================
+
 
 def test_knowledge_base_search():
     from core.knowledge import BuiltInKnowledge

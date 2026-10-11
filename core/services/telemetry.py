@@ -3,10 +3,11 @@
 The batcher is deliberately transport-agnostic. A production worker can send
 batches to PostgreSQL/TimescaleDB after authentication and tenant checks.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import Lock
 from typing import Any
 from uuid import UUID, uuid4
@@ -23,17 +24,33 @@ class TelemetryEvent:
     request_id: str | None = None
 
     @classmethod
-    def create(cls, organization_id: str | UUID, *, source: str, kind: str, payload: dict[str, Any] | None = None, request_id: str | None = None) -> "TelemetryEvent":
+    def create(
+        cls,
+        organization_id: str | UUID,
+        *,
+        source: str,
+        kind: str,
+        payload: dict[str, Any] | None = None,
+        request_id: str | None = None,
+    ) -> TelemetryEvent:
         org = UUID(str(organization_id))
         if not source or len(source) > 80 or not kind or len(kind) > 120:
             raise ValueError("source and kind are required and bounded")
         data = payload or {}
         if len(data) > 64 or len(repr(data).encode("utf-8")) > 32_768:
             raise ValueError("telemetry payload is too large")
-        return cls(uuid4(), org, datetime.now(timezone.utc), source, kind, data, request_id[:128] if request_id else None)
+        return cls(uuid4(), org, datetime.now(UTC), source, kind, data, request_id[:128] if request_id else None)
 
     def as_record(self) -> dict[str, Any]:
-        return {"event_id": str(self.event_id), "organization_id": str(self.organization_id), "event_time": self.event_time.isoformat(), "source": self.source, "kind": self.kind, "payload": self.payload, "request_id": self.request_id}
+        return {
+            "event_id": str(self.event_id),
+            "organization_id": str(self.organization_id),
+            "event_time": self.event_time.isoformat(),
+            "source": self.source,
+            "kind": self.kind,
+            "payload": self.payload,
+            "request_id": self.request_id,
+        }
 
 
 class TelemetryBatcher:

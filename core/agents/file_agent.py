@@ -3,7 +3,12 @@
 Reads and searches are allowed inside the configured root. Mutations require an
 explicit approval flag and never follow a path outside that root.
 """
+
 from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 import hashlib
 import shutil
@@ -37,7 +42,15 @@ class FileAgent(BaseAgent):
     def _decision(self, capability: str) -> DecisionRecord:
         approval = bool(self.context.get("approved", False))
         decision = self.policy.evaluate(capability, approval=approval)
-        return DecisionRecord(capability, ["local_policy", f"root={self.root}"], decision.reason, None, "Review the proposed operation before approving it.", decision.action_attempted, decision.decision.value)
+        return DecisionRecord(
+            capability,
+            ["local_policy", f"root={self.root}"],
+            decision.reason,
+            None,
+            "Review the proposed operation before approving it.",
+            decision.action_attempted,
+            decision.decision.value,
+        )
 
     def execute(self) -> dict[str, Any]:
         started = perf_counter()
@@ -55,7 +68,10 @@ class FileAgent(BaseAgent):
                 if target.stat().st_size > self.policy.max_file_bytes:
                     raise ValueError("file exceeds the configured read limit")
                 content = target.read_text(encoding="utf-8", errors="replace")
-                result = TaskResult("completed", {"path": str(target), "content": content, "sha256": hashlib.sha256(content.encode()).hexdigest()})
+                result = TaskResult(
+                    "completed",
+                    {"path": str(target), "content": content, "sha256": hashlib.sha256(content.encode()).hexdigest()},
+                )
             elif task == "search":
                 directory = self._inside_root(self.context.get("path", self.root))
                 pattern = str(self.context.get("pattern", "*"))
@@ -73,7 +89,9 @@ class FileAgent(BaseAgent):
                         raise ValueError("content exceeds the configured write limit")
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text(content, encoding="utf-8")
-                    result = TaskResult("completed", {"path": str(target), "bytes": len(content.encode())}, decision=decision)
+                    result = TaskResult(
+                        "completed", {"path": str(target), "bytes": len(content.encode())}, decision=decision
+                    )
                 elif task == "delete":
                     target = self._inside_root(self.context.get("path", ""), must_exist=True)
                     if target == self.root:
@@ -87,11 +105,26 @@ class FileAgent(BaseAgent):
                     destination = self._inside_root(self.context.get("destination", ""))
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(source), str(destination))
-                    result = TaskResult("completed", {"source": str(source), "destination": str(destination)}, decision=decision)
+                    result = TaskResult(
+                        "completed", {"source": str(source), "destination": str(destination)}, decision=decision
+                    )
             else:
                 result = TaskResult("failed", errors=[f"unsupported task: {task}"])
-            self.audit.record("file_operation", actor=str(self.context.get("user_id", "local")), target=task, outcome=result.status, details={"root": str(self.root)})
+            self.audit.record(
+                "file_operation",
+                actor=str(self.context.get("user_id", "local")),
+                target=task,
+                outcome=result.status,
+                details={"root": str(self.root)},
+            )
             return self.finalize(result.as_dict(), started)
         except Exception as exc:
-            self.audit.record("file_operation", actor=str(self.context.get("user_id", "local")), target=str(self.context.get("task", "unknown")), outcome="failed", details={"error_type": type(exc).__name__})
+            logger.exception("Unhandled exception in file_agent.py")
+            self.audit.record(
+                "file_operation",
+                actor=str(self.context.get("user_id", "local")),
+                target=str(self.context.get("task", "unknown")),
+                outcome="failed",
+                details={"error_type": type(exc).__name__},
+            )
             return self.fail(str(exc), started)

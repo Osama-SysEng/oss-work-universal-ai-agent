@@ -5,10 +5,12 @@ Handles: embedding storage, similarity search, semantic recall.
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import qdrant_client
@@ -30,8 +32,6 @@ class QdrantConfig:
 
 
 class QdrantClient:
-
-
     def __init__(self, config: QdrantConfig | None = None) -> None:
         self.config = config or QdrantConfig()
         self._client: qdrant_client.QdrantClient | None = None
@@ -52,7 +52,8 @@ class QdrantClient:
             return
         try:
             self._client.get_collection(self._collection)
-        except Exception:
+        except Exception as _exc:
+            logger.exception("Unhandled exception in qdrant.py")
             self._client.create_collection(
                 collection_name=self._collection,
                 vectors_config=VectorParams(
@@ -76,8 +77,7 @@ class QdrantClient:
 
     # ── Embedding Storage ─────────────────────────────────────
 
-    async def store_embedding(self, point_id: int | str, vector: list[float],
-                              payload: dict[str, Any]) -> None:
+    async def store_embedding(self, point_id: int | str, vector: list[float], payload: dict[str, Any]) -> None:
         """Store an embedding with its payload."""
         if not self._client:
             raise RuntimeError("Not connected")
@@ -91,9 +91,16 @@ class QdrantClient:
             points=[point],
         )
 
-    async def store_interaction(self, interaction_id: str, embedding: list[float],
-                                task: str, user_id: str, result: dict,
-                                agent_used: str, timestamp: datetime | None = None) -> None:
+    async def store_interaction(
+        self,
+        interaction_id: str,
+        embedding: list[float],
+        task: str,
+        user_id: str,
+        result: dict,
+        agent_used: str,
+        timestamp: datetime | None = None,
+    ) -> None:
         """Store an interaction with semantic embedding."""
         payload = {
             "interaction_id": interaction_id,
@@ -101,7 +108,7 @@ class QdrantClient:
             "user_id": user_id,
             "result": result,
             "agent_used": agent_used,
-            "timestamp": (timestamp or datetime.now(timezone.utc)).isoformat(),
+            "timestamp": (timestamp or datetime.now(UTC)).isoformat(),
         }
         await self.store_embedding(
             point_id=interaction_id,
@@ -124,7 +131,8 @@ class QdrantClient:
 
         search_filter = None
         if filter_user_id:
-            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            from qdrant_client.models import FieldCondition, Filter, MatchValue
+
             search_filter = Filter(
                 must=[
                     FieldCondition(
@@ -194,7 +202,8 @@ class QdrantClient:
         """Delete all points for a user."""
         if not self._client:
             raise RuntimeError("Not connected")
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
         self._client.delete_points(
             collection_name=self._collection,
             points_selector=Filter(
@@ -216,10 +225,12 @@ class QdrantClient:
             self._client.get_collection(self._collection)
             return {"status": "healthy"}
         except Exception as e:
+            logger.exception("Unhandled exception in qdrant.py")
             return {"status": "error", "error": str(e)}
 
 
 # ── Default Embedding (identity-based for testing) ────────────
+
 
 def simple_embedding(text: str, size: int = 384) -> list[float]:
     """

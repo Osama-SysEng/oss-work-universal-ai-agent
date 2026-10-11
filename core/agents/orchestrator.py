@@ -1,5 +1,10 @@
 """Deterministic, bounded orchestrator; it never grants capabilities by itself."""
+
 from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 from time import perf_counter
 from typing import Any
@@ -24,12 +29,28 @@ class OrchestratorAgent(BaseAgent):
         context = context or {}
         super().__init__("orchestrator", name="Orchestrator", context=context, **kwargs)
         self.task = task or str(context.get("task", "status"))
-        self.agent_pool = {"browser": BrowserAgent, "code": CodeAgent, "file": FileAgent, "security": SecurityAgent, "integration": IntegrationAgent, "memory": MemoryAgent, "learning": LearningAgent}
+        self.agent_pool = {
+            "browser": BrowserAgent,
+            "code": CodeAgent,
+            "file": FileAgent,
+            "security": SecurityAgent,
+            "integration": IntegrationAgent,
+            "memory": MemoryAgent,
+            "learning": LearningAgent,
+        }
 
     def decompose_task(self, task: str) -> list[str]:
         lowered = task.lower()
         selected = []
-        keywords = {"browser": ("browser", "web", "scrape"), "code": ("code", "program", "refactor"), "file": ("file", "folder", "directory"), "security": ("security", "scan", "vulnerability"), "integration": ("telegram", "github", "google", "whatsapp", "api"), "memory": ("memory", "remember"), "learning": ("learn", "pattern")}
+        keywords = {
+            "browser": ("browser", "web", "scrape"),
+            "code": ("code", "program", "refactor"),
+            "file": ("file", "folder", "directory"),
+            "security": ("security", "scan", "vulnerability"),
+            "integration": ("telegram", "github", "google", "whatsapp", "api"),
+            "memory": ("memory", "remember"),
+            "learning": ("learn", "pattern"),
+        }
         for name, words in keywords.items():
             if any(word in lowered for word in words):
                 selected.append(name)
@@ -38,14 +59,22 @@ class OrchestratorAgent(BaseAgent):
     def execute(self) -> dict[str, Any]:
         started = perf_counter()
         try:
-            request = TaskRequest.create(self.task, user_id=str(self.context.get("user_id", "local")), context=self.context)
+            request = TaskRequest.create(
+                self.task, user_id=str(self.context.get("user_id", "local")), context=self.context
+            )
             results = []
             for agent_type in self.decompose_task(request.task):
                 agent_context = dict(self.context)
                 agent_context["task"] = "review" if agent_type == "code" else agent_context.get("task", "summary")
                 agent = self.agent_pool[agent_type](context=agent_context, policy=self.policy, audit=self.audit)
                 results.append({"agent": agent_type, "result": agent.execute()})
-            data = {"request_id": request.task_id, "subtasks_processed": len(results), "results": results, "external_actions_attempted": False}
+            data = {
+                "request_id": request.task_id,
+                "subtasks_processed": len(results),
+                "results": results,
+                "external_actions_attempted": False,
+            }
             return self.finalize(TaskResult("completed", data).as_dict(), started)
         except Exception as exc:
+            logger.exception("Unhandled exception in orchestrator.py")
             return self.fail(str(exc), started)

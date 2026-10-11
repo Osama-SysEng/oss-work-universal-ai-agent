@@ -12,20 +12,23 @@ Capabilities:
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from core.agents.base import BaseAgent
-from core.contracts import DecisionRecord, TaskResult
-from core.policy import Decision
+from core.contracts import TaskResult
 
 
 class LearningAgent(BaseAgent):
     """
     Real learning agent with pattern discovery and invention capabilities.
-    
+
     When OSS_WORK_SIMULATION_ONLY=1: operates in simulation mode.
     When production: uses real ML analysis, Ultra IQ for invention,
     and persistent storage for patterns and profiles.
@@ -67,6 +70,7 @@ class LearningAgent(BaseAgent):
     def execute(self) -> dict[str, Any]:
         """Execute a learning task."""
         import time
+
         started = time.monotonic()
 
         task = str(self.context.get("task", "summary"))
@@ -76,27 +80,33 @@ class LearningAgent(BaseAgent):
         # Validate events
         if not isinstance(events, list):
             return self.finalize(
-                TaskResult("failed", {
-                    "error": "events must be a list",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "error": "events must be a list",
+                    },
+                ).as_dict(),
                 started,
             )
 
         if len(events) > 100000:
             return self.finalize(
-                TaskResult("failed", {
-                    "error": f"events list too large: {len(events)} items (max 100000)",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "error": f"events list too large: {len(events)} items (max 100000)",
+                    },
+                ).as_dict(),
                 started,
             )
 
         # Route to handler
         handlers = {
-            "summary":         self._summarize_events,
-            "patterns":        self._discover_patterns,
-            "invent":          self._invent_methodology,
-            "profile_user":    self._build_user_profile,
-            "optimize":        self._optimize_routing,
+            "summary": self._summarize_events,
+            "patterns": self._discover_patterns,
+            "invent": self._invent_methodology,
+            "profile_user": self._build_user_profile,
+            "optimize": self._optimize_routing,
             "session_summary": self._session_summary,
         }
 
@@ -106,15 +116,19 @@ class LearningAgent(BaseAgent):
             return result
         else:
             return self.finalize(
-                TaskResult("failed", {
-                    "error": f"Unknown learning task: {task}",
-                    "supported_tasks": list(handlers.keys()),
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "error": f"Unknown learning task: {task}",
+                        "supported_tasks": list(handlers.keys()),
+                    },
+                ).as_dict(),
                 started,
             )
 
     def _is_simulation_only(self) -> bool:
         import os
+
         return os.getenv("OSS_WORK_SIMULATION_ONLY", "1") == "1"
 
     def _is_production_mode(self) -> bool:
@@ -122,31 +136,27 @@ class LearningAgent(BaseAgent):
 
     # ── EVENT SUMMARY ──────────────────────────────────────
 
-    def _summarize_events(
-        self, events: list[dict], user_id: str, started: float
-    ) -> dict[str, Any]:
+    def _summarize_events(self, events: list[dict], user_id: str, started: float) -> dict[str, Any]:
         """Generate a statistical summary of interaction events."""
-        import time
 
         if not events:
             return self.finalize(
-                TaskResult("completed", {
-                    "task": "summary",
-                    "user_id": user_id,
-                    "event_count": 0,
-                    "summary": "No events to summarize.",
-                    "retention": "in-memory request scope",
-                }).as_dict(),
+                TaskResult(
+                    "completed",
+                    {
+                        "task": "summary",
+                        "user_id": user_id,
+                        "event_count": 0,
+                        "summary": "No events to summarize.",
+                        "retention": "in-memory request scope",
+                    },
+                ).as_dict(),
                 started,
             )
 
         # Basic statistics
         total = len(events)
-        labels = [
-            str(item.get("label", "unknown"))[:100]
-            for item in events
-            if isinstance(item, dict)
-        ]
+        labels = [str(item.get("label", "unknown"))[:100] for item in events if isinstance(item, dict)]
         label_counts = dict(Counter(labels))
 
         # Agent usage distribution
@@ -171,7 +181,7 @@ class LearningAgent(BaseAgent):
                 if ts:
                     try:
                         timestamps.append(
-                            datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+                            datetime.fromisoformat(str(ts).replace("Z", "+00:00"))  # noqa: FURB162 - py311 needs Z fix
                             if isinstance(ts, str)
                             else ts
                         )
@@ -207,36 +217,39 @@ class LearningAgent(BaseAgent):
         }
 
         return self.finalize(
-            TaskResult("completed", {
-                "task": "summary",
-                "user_id": user_id,
-                "summary": summary,
-            }).as_dict(),
+            TaskResult(
+                "completed",
+                {
+                    "task": "summary",
+                    "user_id": user_id,
+                    "summary": summary,
+                },
+            ).as_dict(),
             started,
         )
 
     # ── PATTERN DISCOVERY (REAL ML) ────────────────────────
 
-    def _discover_patterns(
-        self, events: list[dict], user_id: str, started: float
-    ) -> dict[str, Any]:
+    def _discover_patterns(self, events: list[dict], user_id: str, started: float) -> dict[str, Any]:
         """
         Discover patterns from interaction history using real ML analysis.
-        
+
         Uses scikit-learn for clustering, frequency analysis,
         and pattern detection. Stores discovered patterns for
         personalization and routing optimization.
         """
-        import time
 
         if not events:
             return self.finalize(
-                TaskResult("completed", {
-                    "task": "patterns",
-                    "user_id": user_id,
-                    "patterns": [],
-                    "note": "No events provided for pattern discovery.",
-                }).as_dict(),
+                TaskResult(
+                    "completed",
+                    {
+                        "task": "patterns",
+                        "user_id": user_id,
+                        "patterns": [],
+                        "note": "No events provided for pattern discovery.",
+                    },
+                ).as_dict(),
                 started,
             )
 
@@ -265,7 +278,11 @@ class LearningAgent(BaseAgent):
                 ts = event.get("timestamp")
                 if ts:
                     try:
-                        dt = datetime.fromisoformat(str(ts).replace("Z", "+00:00")) if isinstance(ts, str) else ts
+                        dt = (
+                            datetime.fromisoformat(str(ts).replace("Z", "+00:00"))  # noqa: FURB162 - py311 needs Z fix
+                            if isinstance(ts, str)
+                            else ts
+                        )
                         hours.append(dt.hour)
                     except (ValueError, TypeError):
                         pass
@@ -285,16 +302,12 @@ class LearningAgent(BaseAgent):
         statuses = [str(e.get("status", "unknown"))[:50] for e in events if isinstance(e, dict)]
         status_counts = Counter(statuses)
         patterns["status_distribution"] = dict(status_counts)
-        total = len(events)
         completed = status_counts.get("completed", 0)
         failed = status_counts.get("failed", 0)
         patterns["success_rate"] = round(completed / (completed + failed) * 100, 2) if (completed + failed) > 0 else 0.0
 
         # 5. Task complexity inference (from task length and agent used)
-        task_lengths = [
-            len(str(e.get("task", e.get("label", ""))))
-            for e in events if isinstance(e, dict)
-        ]
+        task_lengths = [len(str(e.get("task", e.get("label", "")))) for e in events if isinstance(e, dict)]
         if task_lengths:
             patterns["avg_task_length"] = round(sum(task_lengths) / len(task_lengths), 2)
             patterns["max_task_length"] = max(task_lengths)
@@ -330,6 +343,7 @@ class LearningAgent(BaseAgent):
         try:
             patterns_file = self._data_dir / f"patterns_{user_id}.json"
             import json
+
             patterns_file.write_text(
                 json.dumps(patterns, indent=2, ensure_ascii=False),
                 encoding="utf-8",
@@ -338,25 +352,26 @@ class LearningAgent(BaseAgent):
             pass  # Non-fatal
 
         return self.finalize(
-            TaskResult("completed", {
-                "task": "patterns",
-                "user_id": user_id,
-                "patterns": patterns,
-                "total_events_analyzed": len(events),
-                "note": "Pattern discovery completed using statistical analysis. "
-                        "Patterns are stored locally for future reference.",
-            }).as_dict(),
+            TaskResult(
+                "completed",
+                {
+                    "task": "patterns",
+                    "user_id": user_id,
+                    "patterns": patterns,
+                    "total_events_analyzed": len(events),
+                    "note": "Pattern discovery completed using statistical analysis. "
+                    "Patterns are stored locally for future reference.",
+                },
+            ).as_dict(),
             started,
         )
 
     # ── METHODOLOGY INVENTION ──────────────────────────────
 
-    def _invent_methodology(
-        self, events: list[dict], user_id: str, started: float
-    ) -> dict[str, Any]:
+    def _invent_methodology(self, events: list[dict], user_id: str, started: float) -> dict[str, Any]:
         """
         Genuine methodology invention via Ultra IQ Imagination Engine.
-        
+
         Uses the Imagination Engine to invent novel approaches
         for problems identified in the interaction history.
         """
@@ -373,17 +388,21 @@ class LearningAgent(BaseAgent):
 
         if not problem:
             return self.finalize(
-                TaskResult("failed", {
-                    "task": "invent",
-                    "user_id": user_id,
-                    "error": "No problem specified and no events to analyze. Provide 'problem' in context.",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "task": "invent",
+                        "user_id": user_id,
+                        "error": "No problem specified and no events to analyze. Provide 'problem' in context.",
+                    },
+                ).as_dict(),
                 started,
             )
 
         # Try to use Ultra IQ Engine if available
         try:
             from core.imagination.engine import UltraIQEngine
+
             engine = UltraIQEngine(
                 max_threads=50,
                 simulation_depth=10,
@@ -394,21 +413,24 @@ class LearningAgent(BaseAgent):
             elapsed = (time.monotonic() - started) * 1000
 
             return self.finalize(
-                TaskResult("completed", {
-                    "task": "invent",
-                    "user_id": user_id,
-                    "problem": problem,
-                    "domain": domain,
-                    "methodology": result.solution,
-                    "reasoning_chain": result.reasoning_chain,
-                    "is_novel": result.invented,
-                    "threads_explored": result.threads_explored,
-                    "confidence": result.confidence,
-                    "cross_domain_bridges": result.cross_domain_bridges,
-                    "elapsed_ms": round(elapsed, 2),
-                    "note": "Methodology invented using Ultra IQ Imagination Engine. "
-                            "This is a genuinely novel approach, not retrieved from existing solutions.",
-                }).as_dict(),
+                TaskResult(
+                    "completed",
+                    {
+                        "task": "invent",
+                        "user_id": user_id,
+                        "problem": problem,
+                        "domain": domain,
+                        "methodology": result.solution,
+                        "reasoning_chain": result.reasoning_chain,
+                        "is_novel": result.invented,
+                        "threads_explored": result.threads_explored,
+                        "confidence": result.confidence,
+                        "cross_domain_bridges": result.cross_domain_bridges,
+                        "elapsed_ms": round(elapsed, 2),
+                        "note": "Methodology invented using Ultra IQ Imagination Engine. "
+                        "This is a genuinely novel approach, not retrieved from existing solutions.",
+                    },
+                ).as_dict(),
                 started,
             )
         except ImportError:
@@ -417,29 +439,30 @@ class LearningAgent(BaseAgent):
             elapsed = (time.monotonic() - started) * 1000
 
             return self.finalize(
-                TaskResult("completed", {
-                    "task": "invent",
-                    "user_id": user_id,
-                    "problem": problem,
-                    "domain": domain,
-                    "methodology": methodology,
-                    "reasoning_chain": [
-                        f"Analyzed problem: {problem[:100]}",
-                        f"Domain context: {domain}",
-                        "Generated methodology using heuristic synthesis",
-                    ],
-                    "is_novel": True,
-                    "elapsed_ms": round(elapsed, 2),
-                    "note": "Ultra IQ Imagination Engine not available. "
-                            "Methodology generated using heuristic invention. "
-                            "Install imagination engine for full capabilities.",
-                }).as_dict(),
+                TaskResult(
+                    "completed",
+                    {
+                        "task": "invent",
+                        "user_id": user_id,
+                        "problem": problem,
+                        "domain": domain,
+                        "methodology": methodology,
+                        "reasoning_chain": [
+                            f"Analyzed problem: {problem[:100]}",
+                            f"Domain context: {domain}",
+                            "Generated methodology using heuristic synthesis",
+                        ],
+                        "is_novel": True,
+                        "elapsed_ms": round(elapsed, 2),
+                        "note": "Ultra IQ Imagination Engine not available. "
+                        "Methodology generated using heuristic invention. "
+                        "Install imagination engine for full capabilities.",
+                    },
+                ).as_dict(),
                 started,
             )
 
-    def _heuristic_invention(
-        self, problem: str, domain: str, events: list[dict]
-    ) -> str:
+    def _heuristic_invention(self, problem: str, domain: str, events: list[dict]) -> str:
         """Generate a methodology using heuristic synthesis when Ultra IQ is unavailable."""
         # Analyze the problem and generate a structured approach
         approach = f"""
@@ -491,12 +514,10 @@ It does not replicate any existing documented approach.
 
     # ── USER PROFILING ─────────────────────────────────────
 
-    def _build_user_profile(
-        self, events: list[dict], user_id: str, started: float
-    ) -> dict[str, Any]:
+    def _build_user_profile(self, events: list[dict], user_id: str, started: float) -> dict[str, Any]:
         """
         Build a cognitive profile of the user for personalization.
-        
+
         Analyzes interaction patterns to infer:
         - Expertise level
         - Communication style preference
@@ -504,23 +525,25 @@ It does not replicate any existing documented approach.
         - Language preference
         - Active domains
         """
-        import time
 
         if not events:
             return self.finalize(
-                TaskResult("completed", {
-                    "task": "profile_user",
-                    "user_id": user_id,
-                    "profile": {
-                        "expertise_level": "unknown",
-                        "preferred_communication_style": "balanced",
-                        "task_complexity_preference": "mixed",
-                        "language_preference": "unknown",
-                        "active_domains": [],
-                        "total_interactions": 0,
+                TaskResult(
+                    "completed",
+                    {
+                        "task": "profile_user",
+                        "user_id": user_id,
+                        "profile": {
+                            "expertise_level": "unknown",
+                            "preferred_communication_style": "balanced",
+                            "task_complexity_preference": "mixed",
+                            "language_preference": "unknown",
+                            "active_domains": [],
+                            "total_interactions": 0,
+                        },
+                        "note": "No events provided for profiling.",
                     },
-                    "note": "No events provided for profiling.",
-                }).as_dict(),
+                ).as_dict(),
                 started,
             )
 
@@ -547,10 +570,7 @@ It does not replicate any existing documented approach.
             profile["language_confidence"] = 0.0
 
         # 2. Expertise level inference (from task complexity and specificity)
-        task_lengths = [
-            len(str(e.get("task", e.get("label", ""))))
-            for e in events if isinstance(e, dict)
-        ]
+        task_lengths = [len(str(e.get("task", e.get("label", "")))) for e in events if isinstance(e, dict)]
         avg_length = sum(task_lengths) / len(task_lengths) if task_lengths else 0
 
         # Longer, more specific tasks suggest higher expertise
@@ -575,54 +595,140 @@ It does not replicate any existing documented approach.
         # 4. Task complexity preference
         complex_tasks = sum(1 for t in task_lengths if t > 100)
         profile["task_complexity_preference"] = (
-            "complex" if complex_tasks > len(task_lengths) * 0.5
-            else "mixed" if complex_tasks > 0
-            else "simple"
+            "complex" if complex_tasks > len(task_lengths) * 0.5 else "mixed" if complex_tasks > 0 else "simple"
         )
 
         # 5. Active domains (from task content)
         domain_keywords = {
-            "software_development": ["code", "develop", "program", "software", "api", "app",
-                                     "web", "system", "python", "javascript", "typescript"],
-            "data_analysis": ["data", "database", "analysis", "report", "stats", "query",
-                              "csv", "excel", "visualization", "chart"],
-            "content_creation": ["write", "content", "article", "blog", "post", "email",
-                                  "message", "document", "text", "copy"],
-            "automation": ["automate", "script", "bot", "task", "workflow", "schedule",
-                           "integrate", "pipeline", "crawl", "scrape"],
-            "infrastructure": ["server", "deploy", "cloud", "docker", "kubernetes", "aws",
-                               "azure", "linux", "nginx", "api"],
-            "design": ["design", "ui", "ux", "interface", "frontend", "css", "layout",
-                       "visual", "responsive", "animation"],
-            "education": ["learn", "teach", "student", "tutorial", "course", "explain",
-                          "tutorial", "guide", "training"],
-            "business": ["business", "plan", "strategy", "market", "product", "customer",
-                         "revenue", "team", "management", "startup"],
+            "software_development": [
+                "code",
+                "develop",
+                "program",
+                "software",
+                "api",
+                "app",
+                "web",
+                "system",
+                "python",
+                "javascript",
+                "typescript",
+            ],
+            "data_analysis": [
+                "data",
+                "database",
+                "analysis",
+                "report",
+                "stats",
+                "query",
+                "csv",
+                "excel",
+                "visualization",
+                "chart",
+            ],
+            "content_creation": [
+                "write",
+                "content",
+                "article",
+                "blog",
+                "post",
+                "email",
+                "message",
+                "document",
+                "text",
+                "copy",
+            ],
+            "automation": [
+                "automate",
+                "script",
+                "bot",
+                "task",
+                "workflow",
+                "schedule",
+                "integrate",
+                "pipeline",
+                "crawl",
+                "scrape",
+            ],
+            "infrastructure": [
+                "server",
+                "deploy",
+                "cloud",
+                "docker",
+                "kubernetes",
+                "aws",
+                "azure",
+                "linux",
+                "nginx",
+                "api",
+            ],
+            "design": [
+                "design",
+                "ui",
+                "ux",
+                "interface",
+                "frontend",
+                "css",
+                "layout",
+                "visual",
+                "responsive",
+                "animation",
+            ],
+            "education": [
+                "learn",
+                "teach",
+                "student",
+                "tutorial",
+                "course",
+                "explain",
+                "tutorial",
+                "guide",
+                "training",
+            ],
+            "business": [
+                "business",
+                "plan",
+                "strategy",
+                "market",
+                "product",
+                "customer",
+                "revenue",
+                "team",
+                "management",
+                "startup",
+            ],
         }
 
         active_domains = []
         for domain, keywords in domain_keywords.items():
-            matches = sum(1 for event in events if isinstance(event, dict)
-                         and any(kw in str(event.get("task", event.get("label", ""))).lower()
-                                for kw in keywords))
+            matches = sum(
+                1
+                for event in events
+                if isinstance(event, dict)
+                and any(kw in str(event.get("task", event.get("label", ""))).lower() for kw in keywords)
+            )
             if matches > 0:
-                active_domains.append({
-                    "domain": domain,
-                    "interaction_count": matches,
-                    "percentage": round(matches / len(events) * 100, 2),
-                })
+                active_domains.append(
+                    {
+                        "domain": domain,
+                        "interaction_count": matches,
+                        "percentage": round(matches / len(events) * 100, 2),
+                    }
+                )
 
         profile["active_domains"] = sorted(active_domains, key=lambda x: x["interaction_count"], reverse=True)
 
         # 6. Overall stats
         profile["total_interactions"] = len(events)
-        profile["unique_tasks"] = len(set(str(e.get("task", e.get("label", "")))[:50] for e in events if isinstance(e, dict)))
+        profile["unique_tasks"] = len(
+            {str(e.get("task", e.get("label", "")))[:50] for e in events if isinstance(e, dict)}
+        )
         profile["session_count_estimate"] = max(1, len(events) // 10)
 
         # Store profile
         try:
             profile_file = self._data_dir / f"profile_{user_id}.json"
             import json
+
             profile_file.write_text(
                 json.dumps(profile, indent=2, ensure_ascii=False),
                 encoding="utf-8",
@@ -631,38 +737,41 @@ It does not replicate any existing documented approach.
             pass
 
         return self.finalize(
-            TaskResult("completed", {
-                "task": "profile_user",
-                "user_id": user_id,
-                "profile": profile,
-                "total_events_analyzed": len(events),
-                "note": "User profile generated from interaction history. "
-                        "Profile is stored locally and updated with each analysis.",
-            }).as_dict(),
+            TaskResult(
+                "completed",
+                {
+                    "task": "profile_user",
+                    "user_id": user_id,
+                    "profile": profile,
+                    "total_events_analyzed": len(events),
+                    "note": "User profile generated from interaction history. "
+                    "Profile is stored locally and updated with each analysis.",
+                },
+            ).as_dict(),
             started,
         )
 
     # ── ROUTING OPTIMIZATION ───────────────────────────────
 
-    def _optimize_routing(
-        self, events: list[dict], user_id: str, started: float
-    ) -> dict[str, Any]:
+    def _optimize_routing(self, events: list[dict], user_id: str, started: float) -> dict[str, Any]:
         """
         Optimize task routing based on historical data.
-        
+
         Recommends which agent to use for different task types
         based on past success rates and user preferences.
         """
-        import time
 
         if not events:
             return self.finalize(
-                TaskResult("completed", {
-                    "task": "optimize",
-                    "user_id": user_id,
-                    "recommendations": [],
-                    "note": "No events provided for routing optimization.",
-                }).as_dict(),
+                TaskResult(
+                    "completed",
+                    {
+                        "task": "optimize",
+                        "user_id": user_id,
+                        "recommendations": [],
+                        "note": "No events provided for routing optimization.",
+                    },
+                ).as_dict(),
                 started,
             )
 
@@ -732,36 +841,39 @@ It does not replicate any existing documented approach.
         ]
 
         return self.finalize(
-            TaskResult("completed", {
-                "task": "optimize",
-                "user_id": user_id,
-                "data_driven_recommendations": recommendations,
-                "general_routing_rules": general_rules,
-                "total_events_analyzed": len(events),
-                "note": "Routing optimization based on historical success rates and task analysis.",
-            }).as_dict(),
+            TaskResult(
+                "completed",
+                {
+                    "task": "optimize",
+                    "user_id": user_id,
+                    "data_driven_recommendations": recommendations,
+                    "general_routing_rules": general_rules,
+                    "total_events_analyzed": len(events),
+                    "note": "Routing optimization based on historical success rates and task analysis.",
+                },
+            ).as_dict(),
             started,
         )
 
     # ── SESSION SUMMARY ────────────────────────────────────
 
-    def _session_summary(
-        self, events: list[dict], user_id: str, started: float
-    ) -> dict[str, Any]:
+    def _session_summary(self, events: list[dict], user_id: str, started: float) -> dict[str, Any]:
         """
         Generate a concise summary of a user session.
         Used for displaying session activity in the dashboard.
         """
-        import time
 
         if not events:
             return self.finalize(
-                TaskResult("completed", {
-                    "task": "session_summary",
-                    "user_id": user_id,
-                    "summary": "No session activity to summarize.",
-                    "event_count": 0,
-                }).as_dict(),
+                TaskResult(
+                    "completed",
+                    {
+                        "task": "session_summary",
+                        "user_id": user_id,
+                        "summary": "No session activity to summarize.",
+                        "event_count": 0,
+                    },
+                ).as_dict(),
                 started,
             )
 
@@ -797,11 +909,14 @@ It does not replicate any existing documented approach.
         }
 
         return self.finalize(
-            TaskResult("completed", {
-                "task": "session_summary",
-                "user_id": user_id,
-                "summary": summary,
-            }).as_dict(),
+            TaskResult(
+                "completed",
+                {
+                    "task": "session_summary",
+                    "user_id": user_id,
+                    "summary": summary,
+                },
+            ).as_dict(),
             started,
         )
 
@@ -809,6 +924,7 @@ It does not replicate any existing documented approach.
 async def asyncio_run(coro):
     """Run async coroutine from sync context."""
     import asyncio
+
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

@@ -5,10 +5,14 @@ Handles: session caching, rate limiting, temporary storage.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import json
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import redis
@@ -24,7 +28,6 @@ class RedisConfig:
 
 
 class RedisClient:
-
     def __init__(self, config: RedisConfig | None = None) -> None:
         self.config = config or RedisConfig()
         self._client: redis.Redis | None = None
@@ -54,8 +57,7 @@ class RedisClient:
 
     # ── Session Management ─────────────────────────────────────
 
-    async def set_session(self, user_id: str, session_data: dict[str, Any],
-                          ttl: int | None = None) -> None:
+    async def set_session(self, user_id: str, session_data: dict[str, Any], ttl: int | None = None) -> None:
         """Store session data for a user."""
         if not self._client:
             raise RuntimeError("Not connected")
@@ -80,16 +82,17 @@ class RedisClient:
         key = self._key("session", user_id)
         self._client.delete(key)
 
-    async def update_session_task(self, user_id: str, task: str,
-                                   result: dict[str, Any]) -> None:
+    async def update_session_task(self, user_id: str, task: str, result: dict[str, Any]) -> None:
         """Append a task result to user's session history."""
         session = await self.get_session(user_id) or {}
         history = session.get("task_history", [])
-        history.append({
-            "task": task,
-            "result": result,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
+        history.append(
+            {
+                "task": task,
+                "result": result,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
         # Keep last 100 tasks
         session["task_history"] = history[-100:]
         await self.set_session(user_id, session)
@@ -178,20 +181,22 @@ class RedisClient:
 
     # ── Task Queue (simple) ────────────────────────────────────
 
-    async def enqueue_task(self, user_id: str, task: str,
-                           priority: int = 0) -> str:
+    async def enqueue_task(self, user_id: str, task: str, priority: int = 0) -> str:
         """Add a task to the queue."""
         if not self._client:
             raise RuntimeError("Not connected")
 
         task_id = f"{int(time.time() * 1000)}:{user_id}"
-        task_data = json.dumps({
-            "task_id": task_id,
-            "user_id": user_id,
-            "task": task,
-            "priority": priority,
-            "enqueued_at": datetime.now(timezone.utc).isoformat(),
-        }, ensure_ascii=False)
+        task_data = json.dumps(
+            {
+                "task_id": task_id,
+                "user_id": user_id,
+                "task": task,
+                "priority": priority,
+                "enqueued_at": datetime.now(UTC).isoformat(),
+            },
+            ensure_ascii=False,
+        )
 
         # Use sorted set with score = -priority for ordering
         key = self._key("task_queue")
@@ -231,8 +236,7 @@ class RedisClient:
 
     # ── Counters ───────────────────────────────────────────────
 
-    async def increment_counter(self, counter_name: str,
-                                 user_id: str | None = None) -> int:
+    async def increment_counter(self, counter_name: str, user_id: str | None = None) -> int:
         """Increment a global or user-specific counter."""
         if not self._client:
             raise RuntimeError("Not connected")
@@ -244,8 +248,7 @@ class RedisClient:
 
         return self._client.incr(key)
 
-    async def get_counter(self, counter_name: str,
-                          user_id: str | None = None) -> int:
+    async def get_counter(self, counter_name: str, user_id: str | None = None) -> int:
         """Get counter value."""
         if not self._client:
             raise RuntimeError("Not connected")
@@ -267,4 +270,5 @@ class RedisClient:
             pong = self._client.ping()
             return {"status": "healthy", "ping": pong}
         except Exception as e:
+            logger.exception("Unhandled exception in redis.py")
             return {"status": "error", "error": str(e)}

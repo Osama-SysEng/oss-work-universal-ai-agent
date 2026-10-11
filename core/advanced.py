@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -33,12 +33,13 @@ class TaskStatus(Enum):
 @dataclass
 class AdvancedTask:
     """مهمة متقدمة مع جدولة وإدارة أداء"""
+
     id: str
     task: str
     priority: TaskPriority = TaskPriority.MEDIUM
     status: TaskStatus = TaskStatus.PENDING
     assigned_agent: str | None = None
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     started_at: str | None = None
     completed_at: str | None = None
     result: dict[str, Any] | None = None
@@ -68,6 +69,7 @@ class AdvancedTask:
 @dataclass
 class AgentPerformance:
     """أداء الوكيل عبر الزمن"""
+
     agent_type: str
     tasks_completed: int = 0
     tasks_failed: int = 0
@@ -148,7 +150,7 @@ class TaskManager:
             return False
         task.result = result
         task.error = error
-        task.completed_at = datetime.now(timezone.utc).isoformat()
+        task.completed_at = datetime.now(UTC).isoformat()
         task.status = TaskStatus.COMPLETED if not error else TaskStatus.FAILED
 
         if task.assigned_agent:
@@ -157,6 +159,7 @@ class TaskManager:
             execution_time = 0.0
             if task.started_at and task.completed_at:
                 from datetime import datetime as dt
+
                 start = dt.fromisoformat(task.started_at)
                 end = dt.fromisoformat(task.completed_at)
                 execution_time = (end - start).total_seconds()
@@ -178,7 +181,13 @@ class TaskManager:
     def get_agent_stats(self, agent_type: str) -> dict[str, Any]:
         perf = self.agent_performance.get(agent_type)
         if not perf:
-            return {"agent_type": agent_type, "tasks_completed": 0, "tasks_failed": 0, "success_rate": 0.0, "average_execution_time": 0.0}
+            return {
+                "agent_type": agent_type,
+                "tasks_completed": 0,
+                "tasks_failed": 0,
+                "success_rate": 0.0,
+                "average_execution_time": 0.0,
+            }
         return {
             "agent_type": perf.agent_type,
             "tasks_completed": perf.tasks_completed,

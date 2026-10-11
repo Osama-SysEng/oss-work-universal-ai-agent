@@ -6,10 +6,9 @@ JEV هو نموذج "System One" لا يولد نصاً بل يعيد قرارا
 مع احتمالات - مثالي للـ routing والـ classification.
 """
 
-import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,54 +16,53 @@ logger = logging.getLogger(__name__)
 @dataclass
 class JEVQuestion:
     """سؤال واحد لـ JEV"""
+
     name: str
     question_type: str  # 'choice', 'bool', 'float', 'text'
     instructions: str
-    criteria: Optional[Dict[str, str]] = None
-    min_val: Optional[float] = None
-    max_val: Optional[float] = None
+    criteria: dict[str, str] | None = None
+    min_val: float | None = None
+    max_val: float | None = None
 
 
 @dataclass
 class JEVDecision:
     """قرار من JEV"""
+
     question_name: str
     decision_type: str
     value: Any
-    probabilities: Dict[str, float]
+    probabilities: dict[str, float]
     confidence: float
 
 
 @dataclass
 class JEVResponse:
     """الاستجابة الكاملة من JEV"""
+
     model: str
-    decisions: List[JEVDecision] = field(default_factory=list)
-    usage: Dict[str, int] = field(default_factory=dict)
-    
+    decisions: list[JEVDecision] = field(default_factory=list)
+    usage: dict[str, int] = field(default_factory=dict)
+
     @classmethod
-    def from_api_response(cls, data: Dict[str, Any]) -> 'JEVResponse':
+    def from_api_response(cls, data: dict[str, Any]) -> "JEVResponse":
         decisions = []
-        for qname, qdata in data.get('answers', {}).items():
+        for qname, qdata in data.get("answers", {}).items():
             d = JEVDecision(
                 question_name=qname,
-                decision_type=qdata.get('type', 'unknown'),
-                value=qdata.get('choice') or qdata.get('value'),
-                probabilities=qdata.get('probabilities', {}),
-                confidence=qdata.get('confidence', 0.0)
+                decision_type=qdata.get("type", "unknown"),
+                value=qdata.get("choice") or qdata.get("value"),
+                probabilities=qdata.get("probabilities", {}),
+                confidence=qdata.get("confidence", 0.0),
             )
             decisions.append(d)
-        return cls(
-            model=data.get('model', 'jev-latest'),
-            decisions=decisions,
-            usage=data.get('usage', {})
-        )
+        return cls(model=data.get("model", "jev-latest"), decisions=decisions, usage=data.get("usage", {}))
 
 
 class JEVClient:
     """
     عميل للاتصال بـ JEV API
-    
+
     الاستخدام:
         client = JEVClient(api_key="ts_...")
         response = client.decide(
@@ -83,16 +81,16 @@ class JEVClient:
             }
         )
     """
-    
+
     BASE_URL = "https://api.typesafe.ai/v1"
     DEFAULT_MODEL = "jev-latest"
-    
-    def __init__(self, api_key: str, base_url: Optional[str] = None):
+
+    def __init__(self, api_key: str, base_url: str | None = None):
         self.api_key = api_key
         self.base_url = base_url or self.BASE_URL
         self.session_token = None
-    
-    def _build_payload(self, state: str, questions: Dict[str, Any]) -> Dict[str, Any]:
+
+    def _build_payload(self, state: str, questions: dict[str, Any]) -> dict[str, Any]:
         """بناء Payload للطلب"""
         formatted_questions = {}
         for name, q in questions.items():
@@ -109,71 +107,53 @@ class JEVClient:
                     formatted_questions[name]["max"] = q.max_val
             elif isinstance(q, dict):
                 formatted_questions[name] = q
-        return {
-            "model": self.DEFAULT_MODEL,
-            "state": state,
-            "questions": formatted_questions
-        }
-    
-    async def decide(self, state: str, questions: Dict[str, Any]) -> JEVResponse:
+        return {"model": self.DEFAULT_MODEL, "state": state, "questions": formatted_questions}
+
+    async def decide(self, state: str, questions: dict[str, Any]) -> JEVResponse:
         """
         إرسال قرار إلى JEV وحصول على نتائج التصنيف
-        
+
         Args:
             state: السياق/الحالة للتحليل
             questions: أسئلة قرار معرفة مسبقاً
-        
+
         Returns:
             JEVResponse مع القرارات والاحتمالات
         """
         import httpx
-        
+
         payload = self._build_payload(state, questions)
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        
+
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{self.base_url}/systemone",
-                json=payload,
-                headers=headers
-            )
+            response = await client.post(f"{self.base_url}/systemone", json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
-        
+
         logger.info(f"JEV response: {len(data.get('answers', {}))} decisions")
         return JEVResponse.from_api_response(data)
-    
-    def decide_sync(self, state: str, questions: Dict[str, Any]) -> JEVResponse:
+
+    def decide_sync(self, state: str, questions: dict[str, Any]) -> JEVResponse:
         """نسخة synchronous من decide()"""
         import httpx
-        
+
         payload = self._build_payload(state, questions)
-        
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
-        
+
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
         with httpx.Client(timeout=30.0) as client:
-            response = client.post(
-                f"{self.base_url}/systemone",
-                json=payload,
-                headers=headers
-            )
+            response = client.post(f"{self.base_url}/systemone", json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
-        
+
         logger.info(f"JEV sync response: {len(data.get('answers', {}))} decisions")
         return JEVResponse.from_api_response(data)
-    
-    def route_task(self, task_type: str, task_description: str, criteria: Dict[str, str]) -> str:
+
+    def route_task(self, task_type: str, task_description: str, criteria: dict[str, str]) -> str:
         """
         توجيه مهمة إلى الفئة المناسبة
-        
+
         مثال:
             route = client.route_task(
                 task_type="task",
@@ -193,18 +173,18 @@ class JEVClient:
                     name="route",
                     question_type="choice",
                     instructions=f"أي فئة تناسب هذا {task_type}؟",
-                    criteria=criteria
+                    criteria=criteria,
                 )
-            }
+            },
         )
         if response.decisions:
             return response.decisions[0].value
         return "unknown"
-    
-    def classify_intent(self, user_input: str, intents: Dict[str, str]) -> Dict[str, Any]:
+
+    def classify_intent(self, user_input: str, intents: dict[str, str]) -> dict[str, Any]:
         """
         تصنيف نية المستخدم
-        
+
         مثال:
             result = client.classify_intent(
                 user_input="أريد إنشاء مشروع جديد",
@@ -220,19 +200,12 @@ class JEVClient:
             state=user_input,
             questions={
                 "intent": JEVQuestion(
-                    name="intent",
-                    question_type="choice",
-                    instructions="ما هي نية المستخدم؟",
-                    criteria=intents
+                    name="intent", question_type="choice", instructions="ما هي نية المستخدم؟", criteria=intents
                 ),
                 "confidence": JEVQuestion(
-                    name="confidence",
-                    question_type="float",
-                    instructions="درجة الثقة (0-1)",
-                    min_val=0.0,
-                    max_val=1.0
-                )
-            }
+                    name="confidence", question_type="float", instructions="درجة الثقة (0-1)", min_val=0.0, max_val=1.0
+                ),
+            },
         )
         result = {"intent": None, "confidence": 0.0}
         for d in response.decisions:
@@ -278,14 +251,11 @@ def create_default_client(api_key: str) -> JEVClient:
 if __name__ == "__main__":
     # اختبار سريع (يتطلب TYPESAFE_API_KEY)
     import os
+
     api_key = os.environ.get("TYPESAFE_API_KEY")
     if api_key:
         client = create_default_client(api_key)
-        response = client.route_task(
-            "task",
-            "تصميم نظام إشعارات لموقع ويب",
-            TASK_ROUTER_CRITERIA
-        )
+        response = client.route_task("task", "تصميم نظام إشعارات لموقع ويب", TASK_ROUTER_CRITERIA)
         print(f"📬 التوجيه: {response}")
     else:
         print("⚠️ لم تعثر على TYPESAFE_API_KEY - ضعها في البيئة لتشغيل الاختبار")

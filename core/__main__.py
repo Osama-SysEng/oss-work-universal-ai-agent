@@ -18,7 +18,6 @@ OSS Work — Main Package Entry Point.
 from __future__ import annotations
 
 import argparse
-import sys
 
 from core.config import load_config
 from core.runtime import main as runtime_main
@@ -54,9 +53,11 @@ def main() -> None:
     # إذا كان هناك مهمة فورية، عالجها وخرج
     if args.task:
         from core.processor import TaskProcessor
+
         config = load_config()
         processor = TaskProcessor(config)
         import asyncio
+
         result = asyncio.run(processor.process(args.task, args.user))
         print(result.get("data", {}).get("solution", "No solution"))
         return

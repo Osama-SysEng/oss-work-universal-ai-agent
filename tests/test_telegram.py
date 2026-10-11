@@ -2,12 +2,11 @@
 اختبارات أساسية لبوت Telegram
 """
 
-import pytest
-
 
 class TestBotConfig:
     def test_default_config(self):
         from interfaces.telegram.bot import BotConfig
+
         cfg = BotConfig()
         assert cfg.token == ""
         assert cfg.admin_chat_ids == []
@@ -19,6 +18,7 @@ class TestBotConfig:
 
     def test_custom_config(self):
         from interfaces.telegram.bot import BotConfig
+
         cfg = BotConfig(
             token="test_token",
             admin_chat_ids=["123", "456"],
@@ -35,7 +35,8 @@ class TestBotConfig:
 
 class TestTelegramBotCreation:
     def test_bot_with_config(self):
-        from interfaces.telegram.bot import OSSWorkTelegramBot, BotConfig
+        from interfaces.telegram.bot import BotConfig, OSSWorkTelegramBot
+
         cfg = BotConfig(token="test_token")
         bot = OSSWorkTelegramBot(config=cfg)
         assert bot.config.token == "test_token"
@@ -43,12 +44,14 @@ class TestTelegramBotCreation:
 
     def test_bot_without_config(self):
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
         assert bot.config.token == ""
         assert bot.orchestrator is not None
 
     def test_create_bot_factory(self):
         from interfaces.telegram.bot import create_bot
+
         bot = create_bot("test_token", ["admin1"])
         assert bot.config.token == "test_token"
         assert "admin1" in bot.config.admin_chat_ids
@@ -57,6 +60,7 @@ class TestTelegramBotCreation:
 class TestBotMessages:
     def test_welcome_message_exists(self):
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
         assert "NASA Space Apps" in bot.WELCOME
         assert "AI Hackathon" in bot.WELCOME
@@ -64,6 +68,7 @@ class TestBotMessages:
 
     def test_help_message_exists(self):
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
         assert "/start" in bot.HELP
         assert "/help" in bot.HELP
@@ -73,39 +78,45 @@ class TestBotMessages:
 class TestFormatResponse:
     def test_completed_status(self):
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
         result = {"status": "completed", "data": {"result": "success"}}
-        text, kb = bot._format(result)
+        text, _kb = bot._format(result)
         assert "✅" in text
         assert "تم" in text
 
     def test_failed_status(self):
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
         result = {"status": "failed", "errors": ["something went wrong"]}
-        text, kb = bot._format(result)
+        text, _kb = bot._format(result)
         assert "❌" in text
         assert "فشل" in text
 
     def test_simulated_status(self):
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
         result = {"status": "simulated", "data": {"note": "simulated only"}}
-        text, kb = bot._format(result)
+        text, _kb = bot._format(result)
         assert "🔵" in text
         assert "محاكاة" in text
 
     def test_requires_approval_status(self):
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
         result = {"status": "requires_approval", "data": {"explanation": "needs approval"}}
-        text, kb = bot._format(result)
+        text, _kb = bot._format(result)
         assert "⚠️" in text
         assert "موافقة" in text
 
     def test_keyboard_for_completed(self):
-        from interfaces.telegram.bot import OSSWorkTelegramBot
         from telegram import InlineKeyboardMarkup
+
+        from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
         result = {"status": "completed", "data": {}}
         _, kb = bot._format(result)
@@ -115,12 +126,14 @@ class TestFormatResponse:
 class TestDataFormatting:
     def test_empty_data(self):
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
         result = bot._fmt_data({})
         assert "لا توجد بيانات" in result
 
     def test_simple_data(self):
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
         result = bot._fmt_data({"name": "test", "value": 42})
         assert "name" in result or "Name" in result
@@ -128,6 +141,7 @@ class TestDataFormatting:
 
     def test_long_string_truncated(self):
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
         long_text = "x" * 1000
         result = bot._fmt_data({"data": long_text})
@@ -138,7 +152,9 @@ class TestDataFormatting:
 class TestCompleteThought:
     def test_complete_thought_import(self):
         import asyncio
+
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
 
         async def run():
@@ -150,7 +166,9 @@ class TestCompleteThought:
 
     def test_complete_thought_empty(self):
         import asyncio
+
         from interfaces.telegram.bot import OSSWorkTelegramBot
+
         bot = OSSWorkTelegramBot()
 
         async def run():

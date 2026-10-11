@@ -10,11 +10,8 @@ OSS Work — Configuration.
 from __future__ import annotations
 
 import os
-import platform
+from dataclasses import dataclass
 from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Any
-
 
 # ═══════════════════════════════════════════════════════════════════
 # Constants
@@ -31,21 +28,22 @@ DATA_DIR = "./data"
 # Configuration
 # ═══════════════════════════════════════════════════════════════════
 
+
 @dataclass
 class AgentConfig:
     """إعدادات运行 الوكيل."""
 
     # ── Mode ──
-    mode: str = "desktop"           # 'telegram' | 'desktop' | 'hybrid'
+    mode: str = "desktop"  # 'telegram' | 'desktop' | 'hybrid'
     telegram_enabled: bool = False  # تفعيل ربط التلجرام
-    bot_token: str | None = None    # توكن بوت التلجرام
-    bot_username: str | None = None # اسم البوت (مثلاً @oss_work_bot)
+    bot_token: str | None = None  # توكن بوت التلجرام
+    bot_username: str | None = None  # اسم البوت (مثلاً @oss_work_bot)
 
     # ── Desktop ──
-    desktop_mode: str = "cli"       # 'cli' | 'api' | 'gui'
-    api_enabled: bool = True        # تفعيل API محلي (بالتناقض مع المستخدم)
-    api_host: str = "127.0.0.1"     # مض tribut API
-    api_port: int = 8080            # منفذ API
+    desktop_mode: str = "cli"  # 'cli' | 'api' | 'gui'
+    api_enabled: bool = True  # تفعيل API محلي (بالتناقض مع المستخدم)
+    api_host: str = "127.0.0.1"  # مض tribut API
+    api_port: int = 8080  # منفذ API
 
     # ── Data ──
     data_dir: str = "./data/oss-work"
@@ -54,7 +52,7 @@ class AgentConfig:
     allowed_root: str = "./data"
 
     # ── Simulation / Production ──
-    simulation_only: bool = True    # محاكاة فقط افتراضيًا
+    simulation_only: bool = True  # محاكاة فقط افتراضيًا
     approved_actions: bool = False  # Approval مطلوب للعمليات الحقيقية
 
     # ── Agent Processing ──
@@ -69,11 +67,11 @@ class AgentConfig:
     allow_external: bool = False
 
     # ── JEV / TypeSafe AI ──
-    use_jev: bool = False           # تفعيل نموذج JEV للتصنيف والترتيب
+    use_jev: bool = False  # تفعيل نموذج JEV للتصنيف والترتيب
     jev_api_key: str | None = None  # مفتاح API من TypeSafe (ts_...)
     jev_base_url: str = "https://api.typesafe.ai/v1"
-    jev_model: str = "jev-latest"   # 'jev-latest' | 'jev-1.13.0' | ...
-    jev_timeout: int = 30           # ثواني
+    jev_model: str = "jev-latest"  # 'jev-latest' | 'jev-1.13.0' | ...
+    jev_timeout: int = 30  # ثواني
 
     # ── Logging ──
     log_level: str = "INFO"
@@ -87,9 +85,7 @@ class AgentConfig:
         Path(self.log_dir).mkdir(parents=True, exist_ok=True)
 
     def is_telegram_mode(self) -> bool:
-        return self.mode == "telegram" or (
-            self.mode == "hybrid" and self.telegram_enabled
-        )
+        return self.mode == "telegram" or (self.mode == "hybrid" and self.telegram_enabled)
 
     def is_desktop_mode(self) -> bool:
         return self.mode == "desktop" or self.mode == "hybrid"
@@ -101,6 +97,7 @@ class AgentConfig:
 # ═══════════════════════════════════════════════════════════════════
 # Loading
 # ═══════════════════════════════════════════════════════════════════
+
 
 def load_config(env_path: str | Path | None = None) -> AgentConfig:
     """تحميل الإعدادات من .env أو متغيرات البيئة."""
@@ -128,6 +125,7 @@ def _load_from_env_file(config: AgentConfig, path: Path) -> None:
     """تحميل من ملف .env."""
     try:
         from dotenv import load_dotenv
+
         load_dotenv(str(path), override=False)
     except ImportError:
         pass
@@ -284,12 +282,13 @@ OSS_LOG_LEVEL=INFO
 # Helpers
 # ═══════════════════════════════════════════════════════════════════
 
+
 def show_config() -> None:
     """عرض الإعدادات الحالية."""
     config = load_config()
-    print(f"\n{'='*60}")
-    print(f"  OSS Work — Current Configuration")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print("  OSS Work — Current Configuration")
+    print(f"{'=' * 60}")
     print(f"  Mode:           {config.mode}")
     print(f"  Telegram:       {'✅ Enabled' if config.telegram_enabled and config.bot_token else '❌ Not configured'}")
     print(f"  Desktop:        {config.desktop_mode} ({'API' if config.api_enabled else 'CLI'})")
@@ -297,7 +296,7 @@ def show_config() -> None:
         print(f"  API URL:        http://{config.api_host}:{config.api_port}")
     print(f"  Simulation:     {'ON' if config.simulation_only else 'OFF'}")
     print(f"  Data Dir:       {config.data_dir}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 if __name__ == "__main__":

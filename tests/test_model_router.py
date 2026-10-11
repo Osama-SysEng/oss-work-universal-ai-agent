@@ -2,13 +2,11 @@
 اختبارات لوحدة توجيه النماذج Model Router
 """
 
-import pytest
-
 from core.services.model_router import (
-    ModelRouter,
-    ModelProvider,
     MODELS,
     ROUTING_TABLE,
+    ModelProvider,
+    ModelRouter,
 )
 
 

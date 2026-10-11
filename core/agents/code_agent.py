@@ -1,5 +1,10 @@
 """Code assistance without executing untrusted source in the host process."""
+
 from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 import ast
 from time import perf_counter
@@ -7,7 +12,6 @@ from typing import Any
 
 from core.agents.base import BaseAgent
 from core.contracts import DecisionRecord, TaskResult
-from core.policy import Decision
 
 
 class CodeAgent(BaseAgent):
@@ -20,7 +24,15 @@ class CodeAgent(BaseAgent):
 
     def _execution_decision(self) -> DecisionRecord:
         decision = self.policy.evaluate("code_execute", approval=bool(self.context.get("approved", False)))
-        return DecisionRecord("code_execution", ["safe_release_policy"], decision.reason, None, "Run only in a separately commissioned sandbox after review.", decision.action_attempted, decision.decision.value)
+        return DecisionRecord(
+            "code_execution",
+            ["safe_release_policy"],
+            decision.reason,
+            None,
+            "Run only in a separately commissioned sandbox after review.",
+            decision.action_attempted,
+            decision.decision.value,
+        )
 
     def execute(self) -> dict[str, Any]:
         started = perf_counter()
@@ -46,7 +58,11 @@ class CodeAgent(BaseAgent):
                     try:
                         tree = ast.parse(code)
                         for node in ast.walk(tree):
-                            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"exec", "eval", "__import__"}:
+                            if (
+                                isinstance(node, ast.Call)
+                                and isinstance(node.func, ast.Name)
+                                and node.func.id in {"exec", "eval", "__import__"}
+                            ):
                                 findings.append(f"high: dynamic call {node.func.id} requires review")
                     except SyntaxError as exc:
                         findings.append(f"high: syntax error at line {exc.lineno}")
@@ -62,4 +78,5 @@ class CodeAgent(BaseAgent):
                 result = TaskResult("failed", errors=[f"unsupported task: {task}"])
             return self.finalize(result.as_dict(), started)
         except Exception as exc:
+            logger.exception("Unhandled exception in code_agent.py")
             return self.fail(str(exc), started)

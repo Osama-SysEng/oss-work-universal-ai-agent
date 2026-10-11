@@ -5,9 +5,13 @@ REWRITTEN: Real integration agent with Telegram, GitHub, webhooks, REST APIs.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import base64
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 from core.agents.base import BaseAgent
 from core.contracts import DecisionRecord, TaskResult
@@ -17,6 +21,7 @@ from core.policy import Decision
 @dataclass
 class IntegrationResult:
     """Structured integration operation result."""
+
     status: str
     integration: str
     action: str
@@ -33,10 +38,17 @@ class IntegrationAgent(BaseAgent):
     When approved and configured: Telegram, GitHub, webhooks, REST APIs.
     """
 
-    SUPPORTED_INTEGRATIONS = [
-        "telegram", "github", "webhook", "rest_api",
-        "gmail", "google_calendar", "google_drive",
-        "whatsapp", "slack", "notion",
+    SUPPORTED_INTEGRATIONS: ClassVar[list[str]] = [
+        "telegram",
+        "github",
+        "webhook",
+        "rest_api",
+        "gmail",
+        "google_calendar",
+        "google_drive",
+        "whatsapp",
+        "slack",
+        "notion",
     ]
 
     def __init__(
@@ -62,6 +74,7 @@ class IntegrationAgent(BaseAgent):
     def execute(self) -> dict[str, Any]:
         """Execute an integration task."""
         import time
+
         started = time.monotonic()
 
         integration = self.context.get("integration")
@@ -70,19 +83,25 @@ class IntegrationAgent(BaseAgent):
 
         if not integration:
             return self.finalize(
-                TaskResult("failed", {
-                    "error": "No integration specified",
-                    "supported": self.SUPPORTED_INTEGRATIONS,
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "error": "No integration specified",
+                        "supported": self.SUPPORTED_INTEGRATIONS,
+                    },
+                ).as_dict(),
                 started,
             )
 
         if integration not in self.SUPPORTED_INTEGRATIONS:
             return self.finalize(
-                TaskResult("failed", {
-                    "error": f"Integration '{integration}' not supported yet",
-                    "supported": self.SUPPORTED_INTEGRATIONS,
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "error": f"Integration '{integration}' not supported yet",
+                        "supported": self.SUPPORTED_INTEGRATIONS,
+                    },
+                ).as_dict(),
                 started,
             )
 
@@ -106,11 +125,15 @@ class IntegrationAgent(BaseAgent):
                 decision.decision.value,
             )
             return self.finalize(
-                TaskResult("requires_approval", {
-                    "integration": integration,
-                    "action": action,
-                    "explanation": decision.reason,
-                }, decision=record).as_dict(),
+                TaskResult(
+                    "requires_approval",
+                    {
+                        "integration": integration,
+                        "action": action,
+                        "explanation": decision.reason,
+                    },
+                    decision=record,
+                ).as_dict(),
                 started,
             )
 
@@ -127,26 +150,29 @@ class IntegrationAgent(BaseAgent):
             return awaitResult(handler, integration, action, started)
         else:
             return self.finalize(
-                TaskResult("failed", {
-                    "integration": integration,
-                    "action": action,
-                    "error": f"Handler not implemented for {integration}",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "integration": integration,
+                        "action": action,
+                        "error": f"Handler not implemented for {integration}",
+                    },
+                ).as_dict(),
                 started,
             )
 
     def _is_simulation_only(self) -> bool:
         import os
+
         return os.getenv("OSS_WORK_SIMULATION_ONLY", "1") == "1"
 
     def _is_production_mode(self) -> bool:
         return not self._is_simulation_only()
 
-    async def _telegram_handler(
-        self, integration: str, action: str, started: float
-    ) -> dict[str, Any]:
+    async def _telegram_handler(self, integration: str, action: str, started: float) -> dict[str, Any]:
         """Handle Telegram integration — send messages, documents, photos."""
         import time
+
         from telegram import Bot
 
         token = self.context.get("telegram_token")
@@ -154,11 +180,14 @@ class IntegrationAgent(BaseAgent):
 
         if not token:
             return self.finalize(
-                TaskResult("failed", {
-                    "integration": integration,
-                    "action": action,
-                    "error": "telegram_token not configured",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "integration": integration,
+                        "action": action,
+                        "error": "telegram_token not configured",
+                    },
+                ).as_dict(),
                 started,
             )
 
@@ -175,24 +204,31 @@ class IntegrationAgent(BaseAgent):
                 )
                 elapsed = (time.monotonic() - started) * 1000
                 return self.finalize(
-                    TaskResult("completed", {
-                        "integration": integration,
-                        "action": action,
-                        "message_id": msg.message_id,
-                        "chat_id": chat_id,
-                        "text_preview": text[:200],
-                        "external_action": True,
-                        "elapsed_ms": round(elapsed, 2),
-                    }).as_dict(),
+                    TaskResult(
+                        "completed",
+                        {
+                            "integration": integration,
+                            "action": action,
+                            "message_id": msg.message_id,
+                            "chat_id": chat_id,
+                            "text_preview": text[:200],
+                            "external_action": True,
+                            "elapsed_ms": round(elapsed, 2),
+                        },
+                    ).as_dict(),
                     started,
                 )
             except Exception as e:
+                logger.exception("Unhandled exception in integration_agent.py")
                 return self.finalize(
-                    TaskResult("failed", {
-                        "integration": integration,
-                        "action": action,
-                        "error": f"Telegram API error: {e}",
-                    }).as_dict(),
+                    TaskResult(
+                        "failed",
+                        {
+                            "integration": integration,
+                            "action": action,
+                            "error": f"Telegram API error: {e}",
+                        },
+                    ).as_dict(),
                     started,
                 )
 
@@ -201,15 +237,18 @@ class IntegrationAgent(BaseAgent):
             caption = self.context.get("caption", "")
             if not file_path:
                 return self.finalize(
-                    TaskResult("failed", {
-                        "integration": integration,
-                        "action": action,
-                        "error": "file_path required for send_document",
-                    }).as_dict(),
+                    TaskResult(
+                        "failed",
+                        {
+                            "integration": integration,
+                            "action": action,
+                            "error": "file_path required for send_document",
+                        },
+                    ).as_dict(),
                     started,
                 )
             try:
-                with open(file_path, "rb") as f:
+                with open(file_path, "rb") as f:  # noqa: ASYNC230 - small blocking read, preserves sync API
                     doc = await bot.send_document(
                         chat_id=chat_id,
                         document=f,
@@ -217,24 +256,31 @@ class IntegrationAgent(BaseAgent):
                     )
                 elapsed = (time.monotonic() - started) * 1000
                 return self.finalize(
-                    TaskResult("completed", {
-                        "integration": integration,
-                        "action": action,
-                        "document_file_id": doc.document.file_id,
-                        "chat_id": chat_id,
-                        "caption": caption,
-                        "external_action": True,
-                        "elapsed_ms": round(elapsed, 2),
-                    }).as_dict(),
+                    TaskResult(
+                        "completed",
+                        {
+                            "integration": integration,
+                            "action": action,
+                            "document_file_id": doc.document.file_id,
+                            "chat_id": chat_id,
+                            "caption": caption,
+                            "external_action": True,
+                            "elapsed_ms": round(elapsed, 2),
+                        },
+                    ).as_dict(),
                     started,
                 )
             except Exception as e:
+                logger.exception("Unhandled exception in integration_agent.py")
                 return self.finalize(
-                    TaskResult("failed", {
-                        "integration": integration,
-                        "action": action,
-                        "error": f"Telegram document error: {e}",
-                    }).as_dict(),
+                    TaskResult(
+                        "failed",
+                        {
+                            "integration": integration,
+                            "action": action,
+                            "error": f"Telegram document error: {e}",
+                        },
+                    ).as_dict(),
                     started,
                 )
 
@@ -243,15 +289,18 @@ class IntegrationAgent(BaseAgent):
             caption = self.context.get("caption", "")
             if not file_path:
                 return self.finalize(
-                    TaskResult("failed", {
-                        "integration": integration,
-                        "action": action,
-                        "error": "file_path required for send_photo",
-                    }).as_dict(),
+                    TaskResult(
+                        "failed",
+                        {
+                            "integration": integration,
+                            "action": action,
+                            "error": "file_path required for send_photo",
+                        },
+                    ).as_dict(),
                     started,
                 )
             try:
-                with open(file_path, "rb") as f:
+                with open(file_path, "rb") as f:  # noqa: ASYNC230 - small blocking read, preserves sync API
                     photo = await bot.send_photo(
                         chat_id=chat_id,
                         photo=f,
@@ -259,51 +308,63 @@ class IntegrationAgent(BaseAgent):
                     )
                 elapsed = (time.monotonic() - started) * 1000
                 return self.finalize(
-                    TaskResult("completed", {
-                        "integration": integration,
-                        "action": action,
-                        "photo_file_id": photo.photo[-1].file_id,
-                        "chat_id": chat_id,
-                        "external_action": True,
-                        "elapsed_ms": round(elapsed, 2),
-                    }).as_dict(),
+                    TaskResult(
+                        "completed",
+                        {
+                            "integration": integration,
+                            "action": action,
+                            "photo_file_id": photo.photo[-1].file_id,
+                            "chat_id": chat_id,
+                            "external_action": True,
+                            "elapsed_ms": round(elapsed, 2),
+                        },
+                    ).as_dict(),
                     started,
                 )
             except Exception as e:
+                logger.exception("Unhandled exception in integration_agent.py")
                 return self.finalize(
-                    TaskResult("failed", {
-                        "integration": integration,
-                        "action": action,
-                        "error": f"Telegram photo error: {e}",
-                    }).as_dict(),
+                    TaskResult(
+                        "failed",
+                        {
+                            "integration": integration,
+                            "action": action,
+                            "error": f"Telegram photo error: {e}",
+                        },
+                    ).as_dict(),
                     started,
                 )
 
         else:
             return self.finalize(
-                TaskResult("failed", {
-                    "integration": integration,
-                    "action": action,
-                    "error": f"Unknown Telegram action: {action}. Supported: send_message, send_document, send_photo",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "integration": integration,
+                        "action": action,
+                        "error": f"Unknown Telegram action: {action}. Supported: send_message, send_document, send_photo",
+                    },
+                ).as_dict(),
                 started,
             )
 
-    async def _github_handler(
-        self, integration: str, action: str, started: float
-    ) -> dict[str, Any]:
+    async def _github_handler(self, integration: str, action: str, started: float) -> dict[str, Any]:
         """Handle GitHub integration — create issues, push files, create PRs."""
         import time
+
         import httpx
 
         token = self.context.get("github_token")
         if not token:
             return self.finalize(
-                TaskResult("failed", {
-                    "integration": integration,
-                    "action": action,
-                    "error": "github_token not configured",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "integration": integration,
+                        "action": action,
+                        "error": "github_token not configured",
+                    },
+                ).as_dict(),
                 started,
             )
 
@@ -321,11 +382,14 @@ class IntegrationAgent(BaseAgent):
                 labels = self.context.get("labels", [])
                 if not title:
                     return self.finalize(
-                        TaskResult("failed", {
-                            "integration": integration,
-                            "action": action,
-                            "error": "title required for create_issue",
-                        }).as_dict(),
+                        TaskResult(
+                            "failed",
+                            {
+                                "integration": integration,
+                                "action": action,
+                                "error": "title required for create_issue",
+                            },
+                        ).as_dict(),
                         started,
                     )
                 url = f"https://api.github.com/repos/{owner}/{repo}/issues"
@@ -334,24 +398,30 @@ class IntegrationAgent(BaseAgent):
                     issue = r.json()
                     elapsed = (time.monotonic() - started) * 1000
                     return self.finalize(
-                        TaskResult("completed", {
-                            "integration": integration,
-                            "action": action,
-                            "issue_number": issue["number"],
-                            "issue_url": issue["html_url"],
-                            "title": title,
-                            "external_action": True,
-                            "elapsed_ms": round(elapsed, 2),
-                        }).as_dict(),
+                        TaskResult(
+                            "completed",
+                            {
+                                "integration": integration,
+                                "action": action,
+                                "issue_number": issue["number"],
+                                "issue_url": issue["html_url"],
+                                "title": title,
+                                "external_action": True,
+                                "elapsed_ms": round(elapsed, 2),
+                            },
+                        ).as_dict(),
                         started,
                     )
                 else:
                     return self.finalize(
-                        TaskResult("failed", {
-                            "integration": integration,
-                            "action": action,
-                            "error": f"GitHub API error {r.status_code}: {r.text[:200]}",
-                        }).as_dict(),
+                        TaskResult(
+                            "failed",
+                            {
+                                "integration": integration,
+                                "action": action,
+                                "error": f"GitHub API error {r.status_code}: {r.text[:200]}",
+                            },
+                        ).as_dict(),
                         started,
                     )
 
@@ -363,42 +433,54 @@ class IntegrationAgent(BaseAgent):
                 message = self.context.get("commit_message", "Add file via OSS Work")
                 if not path or not content:
                     return self.finalize(
-                        TaskResult("failed", {
-                            "integration": integration,
-                            "action": action,
-                            "error": "path and content required for create_file",
-                        }).as_dict(),
+                        TaskResult(
+                            "failed",
+                            {
+                                "integration": integration,
+                                "action": action,
+                                "error": "path and content required for create_file",
+                            },
+                        ).as_dict(),
                         started,
                     )
                 content_b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
                 url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
-                r = await client.put(url, json={
-                    "message": message,
-                    "content": content_b64,
-                })
+                r = await client.put(
+                    url,
+                    json={
+                        "message": message,
+                        "content": content_b64,
+                    },
+                )
                 if r.status_code in (200, 201):
                     data = r.json()
                     elapsed = (time.monotonic() - started) * 1000
                     return self.finalize(
-                        TaskResult("completed", {
-                            "integration": integration,
-                            "action": action,
-                            "path": path,
-                            "sha": data.get("content", {}).get("sha", ""),
-                            "url": data.get("content", {}).get("html_url", ""),
-                            "commit_message": message,
-                            "external_action": True,
-                            "elapsed_ms": round(elapsed, 2),
-                        }).as_dict(),
+                        TaskResult(
+                            "completed",
+                            {
+                                "integration": integration,
+                                "action": action,
+                                "path": path,
+                                "sha": data.get("content", {}).get("sha", ""),
+                                "url": data.get("content", {}).get("html_url", ""),
+                                "commit_message": message,
+                                "external_action": True,
+                                "elapsed_ms": round(elapsed, 2),
+                            },
+                        ).as_dict(),
                         started,
                     )
                 else:
                     return self.finalize(
-                        TaskResult("failed", {
-                            "integration": integration,
-                            "action": action,
-                            "error": f"GitHub API error {r.status_code}: {r.text[:200]}",
-                        }).as_dict(),
+                        TaskResult(
+                            "failed",
+                            {
+                                "integration": integration,
+                                "action": action,
+                                "error": f"GitHub API error {r.status_code}: {r.text[:200]}",
+                            },
+                        ).as_dict(),
                         started,
                     )
 
@@ -411,11 +493,14 @@ class IntegrationAgent(BaseAgent):
                 base = self.context.get("base", "main")
                 if not title:
                     return self.finalize(
-                        TaskResult("failed", {
-                            "integration": integration,
-                            "action": action,
-                            "error": "title required for create_pr",
-                        }).as_dict(),
+                        TaskResult(
+                            "failed",
+                            {
+                                "integration": integration,
+                                "action": action,
+                                "error": "title required for create_pr",
+                            },
+                        ).as_dict(),
                         started,
                     )
                 url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
@@ -424,52 +509,63 @@ class IntegrationAgent(BaseAgent):
                     pr = r.json()
                     elapsed = (time.monotonic() - started) * 1000
                     return self.finalize(
-                        TaskResult("completed", {
-                            "integration": integration,
-                            "action": action,
-                            "pr_number": pr["number"],
-                            "pr_url": pr["html_url"],
-                            "title": title,
-                            "external_action": True,
-                            "elapsed_ms": round(elapsed, 2),
-                        }).as_dict(),
+                        TaskResult(
+                            "completed",
+                            {
+                                "integration": integration,
+                                "action": action,
+                                "pr_number": pr["number"],
+                                "pr_url": pr["html_url"],
+                                "title": title,
+                                "external_action": True,
+                                "elapsed_ms": round(elapsed, 2),
+                            },
+                        ).as_dict(),
                         started,
                     )
                 else:
                     return self.finalize(
-                        TaskResult("failed", {
-                            "integration": integration,
-                            "action": action,
-                            "error": f"GitHub API error {r.status_code}: {r.text[:200]}",
-                        }).as_dict(),
+                        TaskResult(
+                            "failed",
+                            {
+                                "integration": integration,
+                                "action": action,
+                                "error": f"GitHub API error {r.status_code}: {r.text[:200]}",
+                            },
+                        ).as_dict(),
                         started,
                     )
 
             else:
                 return self.finalize(
-                    TaskResult("failed", {
-                        "integration": integration,
-                        "action": action,
-                        "error": f"Unknown GitHub action: {action}. Supported: create_issue, create_file, create_pr",
-                    }).as_dict(),
+                    TaskResult(
+                        "failed",
+                        {
+                            "integration": integration,
+                            "action": action,
+                            "error": f"Unknown GitHub action: {action}. Supported: create_issue, create_file, create_pr",
+                        },
+                    ).as_dict(),
                     started,
                 )
 
-    async def _webhook_handler(
-        self, integration: str, action: str, started: float
-    ) -> dict[str, Any]:
+    async def _webhook_handler(self, integration: str, action: str, started: float) -> dict[str, Any]:
         """Handle webhook delivery."""
         import time
+
         import httpx
 
         url = self.context.get("url")
         if not url:
             return self.finalize(
-                TaskResult("failed", {
-                    "integration": integration,
-                    "action": action,
-                    "error": "url required for webhook",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "integration": integration,
+                        "action": action,
+                        "error": "url required for webhook",
+                    },
+                ).as_dict(),
                 started,
             )
 
@@ -487,43 +583,52 @@ class IntegrationAgent(BaseAgent):
                 )
                 elapsed = (time.monotonic() - started) * 1000
                 return self.finalize(
-                    TaskResult("completed", {
-                        "integration": integration,
-                        "action": action,
-                        "url": url,
-                        "method": method,
-                        "response_code": r.status_code,
-                        "response_body": r.text[:500] if r.text else "",
-                        "external_action": True,
-                        "elapsed_ms": round(elapsed, 2),
-                    }).as_dict(),
+                    TaskResult(
+                        "completed",
+                        {
+                            "integration": integration,
+                            "action": action,
+                            "url": url,
+                            "method": method,
+                            "response_code": r.status_code,
+                            "response_body": r.text[:500] if r.text else "",
+                            "external_action": True,
+                            "elapsed_ms": round(elapsed, 2),
+                        },
+                    ).as_dict(),
                     started,
                 )
         except Exception as e:
+            logger.exception("Unhandled exception in integration_agent.py")
             return self.finalize(
-                TaskResult("failed", {
-                    "integration": integration,
-                    "action": action,
-                    "error": f"Webhook delivery failed: {e}",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "integration": integration,
+                        "action": action,
+                        "error": f"Webhook delivery failed: {e}",
+                    },
+                ).as_dict(),
                 started,
             )
 
-    async def _rest_api_handler(
-        self, integration: str, action: str, started: float
-    ) -> dict[str, Any]:
+    async def _rest_api_handler(self, integration: str, action: str, started: float) -> dict[str, Any]:
         """Handle generic REST API calls."""
         import time
+
         import httpx
 
         url = self.context.get("url")
         if not url:
             return self.finalize(
-                TaskResult("failed", {
-                    "integration": integration,
-                    "action": action,
-                    "error": "url required for rest_api",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "integration": integration,
+                        "action": action,
+                        "error": "url required for rest_api",
+                    },
+                ).as_dict(),
                 started,
             )
 
@@ -551,33 +656,39 @@ class IntegrationAgent(BaseAgent):
                 elapsed = (time.monotonic() - started) * 1000
                 try:
                     data = r.json()
-                except Exception:
+                except Exception as _exc:
+                    logger.exception("Unhandled exception in integration_agent.py")
                     data = r.text[:1000] if r.text else ""
                 return self.finalize(
-                    TaskResult("completed", {
-                        "integration": integration,
-                        "action": action,
-                        "url": url,
-                        "method": method,
-                        "status_code": r.status_code,
-                        "response": data,
-                        "elapsed_ms": round(elapsed, 2),
-                    }).as_dict(),
+                    TaskResult(
+                        "completed",
+                        {
+                            "integration": integration,
+                            "action": action,
+                            "url": url,
+                            "method": method,
+                            "status_code": r.status_code,
+                            "response": data,
+                            "elapsed_ms": round(elapsed, 2),
+                        },
+                    ).as_dict(),
                     started,
                 )
         except Exception as e:
+            logger.exception("Unhandled exception in integration_agent.py")
             return self.finalize(
-                TaskResult("failed", {
-                    "integration": integration,
-                    "action": action,
-                    "error": f"API call failed: {e}",
-                }).as_dict(),
+                TaskResult(
+                    "failed",
+                    {
+                        "integration": integration,
+                        "action": action,
+                        "error": f"API call failed: {e}",
+                    },
+                ).as_dict(),
                 started,
             )
 
-    def _simulate(
-        self, integration: str, action: str | None, started: float
-    ) -> dict[str, Any]:
+    def _simulate(self, integration: str, action: str | None, started: float) -> dict[str, Any]:
         """Simulation-mode fallback."""
         from core.contracts import DecisionRecord
 
@@ -589,8 +700,8 @@ class IntegrationAgent(BaseAgent):
                     "integration": integration,
                     "action": resolved_action,
                     "note": f"No external request attempted for {integration}.{resolved_action}. "
-                            f"Set OSS_WORK_SIMULATION_ONLY=0, configure credentials, "
-                            f"and grant approval to enable real integration.",
+                    f"Set OSS_WORK_SIMULATION_ONLY=0, configure credentials, "
+                    f"and grant approval to enable real integration.",
                 },
                 decision=DecisionRecord(
                     classification="integration_simulation",
@@ -609,6 +720,7 @@ class IntegrationAgent(BaseAgent):
 async def awaitResult(coro, *args, **kwargs):
     """Run async coroutine and return dict from sync context."""
     import asyncio
+
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

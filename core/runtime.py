@@ -9,21 +9,22 @@ OSS Work — Unified Runtime Entry Point.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
 import json
-import os
 import sys
-import time
-from pathlib import Path
 from typing import Any
 
-from core.config import load_config, AgentConfig, VERSION
+from core.config import VERSION, AgentConfig, load_config
 from core.processor import TaskProcessor
-
 
 # ═══════════════════════════════════════════════════════════════════
 # Helpers
 # ═══════════════════════════════════════════════════════════════════
+
 
 def print_header(title: str, width: int = 60) -> None:
     """اطبع رأسًا مزخرفًا."""
@@ -49,6 +50,7 @@ def print_status_box(config: AgentConfig) -> None:
 # Shared Processor Helper
 # ═══════════════════════════════════════════════════════════════════
 
+
 async def process_task(processor: TaskProcessor, task: str) -> dict[str, Any]:
     """معالجة مهمة وعرض النتيجة."""
     result = await processor.process(task)
@@ -73,7 +75,7 @@ async def process_task(processor: TaskProcessor, task: str) -> dict[str, Any]:
     elif status == "busy":
         print(f"\n⏳ مشغول: {result.get('error', 'مهمة قيد المعالجة')}")
     else:
-        print(f"\n📋 النتيجة:")
+        print("\n📋 النتيجة:")
         print(json.dumps(result, ensure_ascii=False, indent=2))
     print()
 
@@ -83,6 +85,7 @@ async def process_task(processor: TaskProcessor, task: str) -> dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════════
 # Desktop CLI Mode
 # ═══════════════════════════════════════════════════════════════════
+
 
 class DesktopCLIMode:
     """
@@ -142,6 +145,7 @@ class DesktopCLIMode:
             if task.lower() == "models":
                 try:
                     from core.services.model_router import get_router
+
                     router = get_router()
                     print("\n🤖 النماذج المتاحة:")
                     for m in router._model_map.values():
@@ -151,6 +155,7 @@ class DesktopCLIMode:
                             print(f"     الرابط: {m.browser_url}")
                         print()
                 except Exception as e:
+                    logger.exception("Unhandled exception in runtime.py")
                     print(f"❌ خطأ: {e}")
                 print()
                 continue
@@ -163,6 +168,7 @@ class DesktopCLIMode:
 # ═══════════════════════════════════════════════════════════════════
 # Desktop API Mode
 # ═══════════════════════════════════════════════════════════════════
+
 
 class DesktopAPIMode:
     """
@@ -178,9 +184,9 @@ class DesktopAPIMode:
 
     async def start(self) -> None:
         """تشغيل API محلي."""
+        import uvicorn
         from fastapi import FastAPI, HTTPException
         from pydantic import BaseModel, Field
-        import uvicorn
 
         app = FastAPI(
             title="OSS Work — Desktop Local API",
@@ -225,28 +231,30 @@ class DesktopAPIMode:
             offset = max(0, offset)
             try:
                 from core.services.model_router import get_router
+
                 router = get_router()
                 all_models = [
-                        {
-                            "id": m.id,
-                            "name": m.name,
-                            "provider": m.provider.value,
-                            "category": m.category,
-                            "context_window": m.context_window,
-                            "supports_vision": m.supports_vision,
-                            "cost_per_1k_tokens": m.cost_per_1k_tokens,
-                            "api_available": m.api_available,
-                            "browser_url": m.browser_url,
-                        }
-                        for m in router._model_map.values()
-                    ]
+                    {
+                        "id": m.id,
+                        "name": m.name,
+                        "provider": m.provider.value,
+                        "category": m.category,
+                        "context_window": m.context_window,
+                        "supports_vision": m.supports_vision,
+                        "cost_per_1k_tokens": m.cost_per_1k_tokens,
+                        "api_available": m.api_available,
+                        "browser_url": m.browser_url,
+                    }
+                    for m in router._model_map.values()
+                ]
                 return {
-                    "models": all_models[offset:offset + limit],
+                    "models": all_models[offset : offset + limit],
                     "total": len(all_models),
                     "limit": limit,
                     "offset": offset,
                 }
             except Exception as e:
+                logger.exception("Unhandled exception in runtime.py")
                 raise HTTPException(500, f"فشل: {e}")
 
         @app.get("/")
@@ -289,6 +297,7 @@ class DesktopAPIMode:
 # Telegram Mode
 # ═══════════════════════════════════════════════════════════════════
 
+
 class TelegramMode:
     """
     تشغيل الوكيل ك봇 تلجرام — ربط بين الهاتف和桌面.
@@ -314,7 +323,7 @@ class TelegramMode:
 
         print(f"  التوكن:     {self.config.bot_token[:20]}...")
         print(f"  المستخدم:   {self.config.bot_username or '@unknown'}")
-        print(f"  الوضع:      المهام من الهاتف →桌面 → النتائج للهاتف")
+        print("  الوضع:      المهام من الهاتف →桌面 → النتائج للهاتف")
         print(f"  المحاكاة:   {'ON' if self.config.simulation_only else 'OFF'}")
 
         if self.config.simulation_only:
@@ -331,7 +340,7 @@ class TelegramMode:
         print()
 
         # استيراد وتشغيل البوت
-        from interfaces.telegram.bot import OSSWorkTelegramBot, BotConfig
+        from interfaces.telegram.bot import BotConfig, OSSWorkTelegramBot
 
         bot_cfg = BotConfig(
             token=self.config.bot_token,
@@ -346,6 +355,7 @@ class TelegramMode:
 # ═══════════════════════════════════════════════════════════════════
 # Hybrid Mode
 # ═══════════════════════════════════════════════════════════════════
+
 
 class HybridMode:
     """تشغيل التلجرام و桌面 معًا."""
@@ -362,7 +372,7 @@ class HybridMode:
 
         # التلجرام
         if self.config.telegram_enabled and self.config.bot_token:
-            from interfaces.telegram.bot import OSSWorkTelegramBot, BotConfig
+            from interfaces.telegram.bot import BotConfig, OSSWorkTelegramBot
 
             bot_cfg = BotConfig(
                 token=self.config.bot_token,
@@ -376,11 +386,11 @@ class HybridMode:
         else:
             print("📱 التلغرام: غير مضبوط")
 
-        #桌面
+        # 桌面
         if self.config.desktop_mode == "api":
-            from fastapi import FastAPI, HTTPException
-            from pydantic import BaseModel, Field
             import uvicorn
+            from fastapi import FastAPI
+            from pydantic import BaseModel, Field
 
             app = FastAPI(title="OSS Work Desktop API", version=VERSION)
 
@@ -407,9 +417,7 @@ class HybridMode:
                 return {"status": "ok"}
 
             print(f"🌐桌面 API: http://{self.config.api_host}:{self.config.api_port}")
-            tasks.append(
-                uvicorn.run(app, host=self.config.api_host, port=self.config.api_port, log_level="info")
-            )
+            tasks.append(uvicorn.run(app, host=self.config.api_host, port=self.config.api_port, log_level="info"))
         else:
             print("💻桌面 CLI: نشط")
 
@@ -429,13 +437,14 @@ class HybridMode:
 # Main Entry Point
 # ═══════════════════════════════════════════════════════════════════
 
+
 def main() -> None:
     """نقطة الدخول الرئيسية — تشغل الوكيل بالوضع المضبوط."""
     config = load_config()
     processor = TaskProcessor(config)
 
     mode = config.mode
-    print(f"\n🚀 OSS Work v1.0.0-dev")
+    print("\n🚀 OSS Work v1.0.0-dev")
     print_status_box(config)
     print()
 

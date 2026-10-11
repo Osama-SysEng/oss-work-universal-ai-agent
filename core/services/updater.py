@@ -5,18 +5,19 @@ Replaces the review-only stub with genuine update capability.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import hashlib
-import json
-import os
 import shutil
 import tempfile
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import httpx
-
 
 RELEASE_API = "https://api.github.com/repos/Osama-SysEng/oss-work-universal-ai-agent/releases/latest"
 
@@ -31,7 +32,6 @@ class UpdateResult:
 
 
 class AutoUpdater:
-
     def __init__(self, current_version: str = "0.2.0") -> None:
         self.current_version = current_version
         self.data_dir = Path("./data/updater")
@@ -58,6 +58,7 @@ class AutoUpdater:
             while len(parts) < 3:
                 parts.append(0)
             return tuple(parts[:3])
+
         return normalize(latest) > normalize(current)
 
     def _find_patch_asset(self, release: dict) -> str | None:
@@ -68,7 +69,7 @@ class AutoUpdater:
                 return asset.get("browser_download_url")
         for asset in assets:
             name = asset.get("name", "").lower()
-            if name.endswith(".zip") or name.endswith(".tar.gz"):
+            if name.endswith((".zip", ".tar.gz")):
                 return asset.get("browser_download_url")
         return None
 
@@ -99,6 +100,7 @@ class AutoUpdater:
                 )
             return await self._apply_update(latest)
         except Exception as e:
+            logger.exception("Unhandled exception in updater.py")
             return UpdateResult(
                 status="error",
                 version=self._get_current_version(),
@@ -153,6 +155,7 @@ class AutoUpdater:
                     downloaded_bytes=len(patch_data),
                 )
         except Exception as e:
+            logger.exception("Unhandled exception in updater.py")
             return UpdateResult(
                 status="error",
                 version=self._get_current_version(),
@@ -197,6 +200,7 @@ class AutoUpdater:
                 "assets_count": len(release.get("assets", [])),
             }
         except Exception as e:
+            logger.exception("Unhandled exception in updater.py")
             return {"available": False, "error": str(e)}
 
 

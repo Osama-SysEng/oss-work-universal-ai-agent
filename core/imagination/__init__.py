@@ -7,19 +7,19 @@ NASA Space Apps Challenge 2025 Local Winner · AI Hackathon 2025 1st Place.
 Built by Osama Mohamed Fathy.
 """
 
-from .engine import UltraIQEngine as UltraIQE
 from .contracts import (
-    Thread,
-    Simulation,
-    ImaginationResult,
     ImaginationEngineConfig,
+    ImaginationResult,
+    Simulation,
+    Thread,
 )
+from .engine import UltraIQEngine as UltraIQE
 
 __version__ = "1.0.0-dev"
 __all__ = [
-    "UltraIQE",
-    "Thread",
-    "Simulation",
-    "ImaginationResult",
     "ImaginationEngineConfig",
+    "ImaginationResult",
+    "Simulation",
+    "Thread",
+    "UltraIQE",
 ]

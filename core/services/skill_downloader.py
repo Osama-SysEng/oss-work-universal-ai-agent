@@ -8,26 +8,28 @@ the needed skill automatically, then registers it in the skill registry.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 import asyncio
-import base64
 import hashlib
 import json
 import os
 import subprocess
-import tempfile
-import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import ClassVar
 
 import httpx
 
-
 # ── Data ──────────────────────────────────────────────────────
+
 
 @dataclass
 class SkillCandidate:
     """A candidate skill found in a search."""
+
     source: str  # github, npm, pip, huggingface
     name: str
     description: str = ""
@@ -41,6 +43,7 @@ class SkillCandidate:
 @dataclass
 class Skill:
     """An installed skill."""
+
     name: str
     source: str
     version: str = ""
@@ -54,6 +57,7 @@ class Skill:
 @dataclass
 class SkillResult:
     """Result of a skill acquisition attempt."""
+
     name: str
     status: str  # installed, already_installed, failed, not_found
     path: str = ""
@@ -63,10 +67,11 @@ class SkillResult:
 
 # ── Skill Downloader ──────────────────────────────────────────
 
+
 class SkillDownloader:
     """
     Auto-downloads skills from GitHub/npm/pip/HuggingFace when needed.
-    
+
     OSS Work extends itself at runtime by finding and installing
     skills that provide capabilities it doesn't have built-in.
     """
@@ -74,7 +79,7 @@ class SkillDownloader:
     SKILL_DIR = Path("./skills")
     REGISTRY_FILE = SKILL_DIR / "registry.json"
 
-    SKILL_SOURCES = {
+    SKILL_SOURCES: ClassVar[dict[str, str]] = {
         "github": "https://api.github.com/search/repositories",
         "npm": "https://registry.npmjs.org/",
         "pip": "https://pypi.org/pypi/",
@@ -82,7 +87,7 @@ class SkillDownloader:
     }
 
     # Known skill patterns (capability → search keywords)
-    SKILL_PATTERNS = {
+    SKILL_PATTERNS: ClassVar[dict[str, list[str]]] = {
         "browser_automation": ["playwright", "selenium", "puppeteer", "browser-automation"],
         "code_generation": ["code-generator", "codegen", "code-generation", "ast-generator"],
         "web_scraping": ["scraper", "web-scraping", "crawler", "scrapy", "beautifulsoup"],
@@ -170,6 +175,7 @@ class SkillDownloader:
                 source=skill.source,
             )
         except Exception as e:
+            logger.exception("Unhandled exception in skill_downloader.py")
             return SkillResult(
                 name=best.name,
                 status="failed",
@@ -198,9 +204,7 @@ class SkillDownloader:
 
         return candidates
 
-    async def _search_github(
-        self, keywords: list[str], capability: str
-    ) -> list[SkillCandidate]:
+    async def _search_github(self, keywords: list[str], capability: str) -> list[SkillCandidate]:
         """Search GitHub for skill repositories."""
         results = []
         query = f"topic:oss-work-skill {keywords[0]}"
@@ -221,25 +225,24 @@ class SkillDownloader:
                 )
                 if r.status_code == 200:
                     for repo in r.json().get("items", [])[:5]:
-                        results.append(SkillCandidate(
-                            source="github",
-                            name=repo["name"],
-                            description=repo.get("description", "")[:200],
-                            stars=repo.get("stargazers_count", 0),
-                            url=repo["clone_url"],
-                            capability=capability,
-                            score=repo.get("stargazers_count", 0) * 0.5
-                                  + (1 if repo.get("forks", 0) > 10 else 0),
-                        ))
-        except Exception as e:
+                        results.append(
+                            SkillCandidate(
+                                source="github",
+                                name=repo["name"],
+                                description=repo.get("description", "")[:200],
+                                stars=repo.get("stargazers_count", 0),
+                                url=repo["clone_url"],
+                                capability=capability,
+                                score=repo.get("stargazers_count", 0) * 0.5 + (1 if repo.get("forks", 0) > 10 else 0),
+                            )
+                        )
+        except Exception as _exc:
+            logger.exception("Unhandled exception in skill_downloader.py")
             # GitHub search failed — not fatal
-            pass
 
         return results
 
-    async def _search_npm(
-        self, keywords: list[str], capability: str
-    ) -> list[SkillCandidate]:
+    async def _search_npm(self, keywords: list[str], capability: str) -> list[SkillCandidate]:
         """Search npm registry for skill packages."""
         results = []
 
@@ -256,23 +259,23 @@ class SkillDownloader:
                 if r.status_code == 200:
                     for pkg in r.json().get("objects", [])[:5]:
                         entry = pkg.get("package", {})
-                        results.append(SkillCandidate(
-                            source="npm",
-                            name=entry.get("name", ""),
-                            description=entry.get("description", "")[:200],
-                            version=entry.get("version", ""),
-                            url=f"https://www.npmjs.com/package/{entry.get('name', '')}",
-                            capability=capability,
-                            score=entry.get("score", {}).get("final", 0) * 0.3,
-                        ))
-        except Exception:
-            pass
+                        results.append(
+                            SkillCandidate(
+                                source="npm",
+                                name=entry.get("name", ""),
+                                description=entry.get("description", "")[:200],
+                                version=entry.get("version", ""),
+                                url=f"https://www.npmjs.com/package/{entry.get('name', '')}",
+                                capability=capability,
+                                score=entry.get("score", {}).get("final", 0) * 0.3,
+                            )
+                        )
+        except Exception as _exc:
+            logger.exception("Suppressed exception in skill_downloader.py")
 
         return results
 
-    async def _search_pip(
-        self, keywords: list[str], capability: str
-    ) -> list[SkillCandidate]:
+    async def _search_pip(self, keywords: list[str], capability: str) -> list[SkillCandidate]:
         """Search PyPI for skill packages."""
         results = []
 
@@ -284,24 +287,24 @@ class SkillDownloader:
                 if r.status_code == 200:
                     data = r.json()
                     info = data.get("info", {})
-                    results.append(SkillCandidate(
-                        source="pip",
-                        name=data.get("info", {}).get("name", keywords[0]),
-                        description=info.get("summary", "")[:200],
-                        version=info.get("version", ""),
-                        url=info.get("project_url", ""),
-                        capability=capability,
-                        score=1.0,  # Exact match gets high score
-                    ))
-        except Exception:
+                    results.append(
+                        SkillCandidate(
+                            source="pip",
+                            name=data.get("info", {}).get("name", keywords[0]),
+                            description=info.get("summary", "")[:200],
+                            version=info.get("version", ""),
+                            url=info.get("project_url", ""),
+                            capability=capability,
+                            score=1.0,  # Exact match gets high score
+                        )
+                    )
+        except Exception as _exc:
+            logger.exception("Unhandled exception in skill_downloader.py")
             # Package not found on PyPI — not an error
-            pass
 
         return results
 
-    def _rank_candidates(
-        self, candidates: list[SkillCandidate], capability: str
-    ) -> SkillCandidate:
+    def _rank_candidates(self, candidates: list[SkillCandidate], capability: str) -> SkillCandidate:
         """Rank candidates and return the best one."""
         if not candidates:
             raise ValueError("No candidates to rank")
@@ -351,29 +354,32 @@ class SkillDownloader:
 
     async def _install_github(self, candidate: SkillCandidate) -> Skill:
         """Clone a GitHub repository as a skill."""
-        import shutil
 
         skill_path = self.skill_dir / candidate.name
-        if skill_path.exists():
+        if skill_path.exists() and (skill_path / "skill.json").exists():
             # Already exists locally — verify it's complete
-            if (skill_path / "skill.json").exists():
-                return Skill(
-                    name=candidate.name,
-                    source="github",
-                    version="local",
-                    capability=candidate.capability,
-                    path=str(skill_path),
-                    stars=candidate.stars,
-                    installed_at=__import__("datetime").datetime.now().isoformat(),
-                )
+            return Skill(
+                name=candidate.name,
+                source="github",
+                version="local",
+                capability=candidate.capability,
+                path=str(skill_path),
+                stars=candidate.stars,
+                installed_at=__import__("datetime").datetime.now().isoformat(),
+            )
 
         # Clone the repo
         proc = await asyncio.create_subprocess_exec(
-            "git", "clone", "--depth", "1", candidate.url, str(skill_path),
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            candidate.url,
+            str(skill_path),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        _stdout, stderr = await proc.communicate()
 
         if proc.returncode != 0:
             raise RuntimeError(f"git clone failed: {stderr.decode('utf-8', errors='replace')}")
@@ -383,12 +389,15 @@ class SkillDownloader:
         if not skill_json.exists():
             # Create a default skill.json
             skill_json.write_text(
-                json.dumps({
-                    "name": candidate.name,
-                    "capability": candidate.capability,
-                    "source": "github",
-                    "description": candidate.description,
-                }, indent=2),
+                json.dumps(
+                    {
+                        "name": candidate.name,
+                        "capability": candidate.capability,
+                        "source": "github",
+                        "description": candidate.description,
+                    },
+                    indent=2,
+                ),
                 encoding="utf-8",
             )
 
@@ -400,7 +409,7 @@ class SkillDownloader:
             path=str(skill_path),
             stars=candidate.stars,
             installed_at=__import__("datetime").datetime.now().isoformat(),
-            checksum= hashlib.sha256(str(skill_path).encode()).hexdigest()[:16],
+            checksum=hashlib.sha256(str(skill_path).encode()).hexdigest()[:16],
         )
 
     async def _install_npm(self, candidate: SkillCandidate) -> Skill:
@@ -430,11 +439,14 @@ class SkillDownloader:
         """Install a pip package as a skill."""
         # Use pip to install
         proc = await asyncio.create_subprocess_exec(
-            "pip", "install", candidate.name, "--quiet",
+            "pip",
+            "install",
+            candidate.name,
+            "--quiet",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        stdout, stderr = await proc.communicate()
+        _stdout, stderr = await proc.communicate()
 
         if proc.returncode != 0:
             raise RuntimeError(f"pip install failed: {stderr.decode('utf-8', errors='replace')}")
@@ -498,9 +510,10 @@ class SkillDownloader:
         if skill:
             try:
                 import shutil
+
                 shutil.rmtree(skill["path"], ignore_errors=True)
-            except Exception:
-                pass
+            except Exception as _exc:
+                logger.exception("Suppressed exception in skill_downloader.py")
             self._save_registry()
             return True
         return False

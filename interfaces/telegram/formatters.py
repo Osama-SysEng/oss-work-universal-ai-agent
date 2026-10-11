@@ -11,6 +11,8 @@ from typing import Any
 
 from telegram import InlineKeyboardMarkup
 
+from interfaces.telegram.keyboards import KeyboardBuilder
+
 
 class ResponseFormatter:
     """Formats bot responses for Telegram."""
@@ -124,18 +126,14 @@ _صفر إعداد. صفر تكلفة. صفر حدود._
     def format_status(sim_only: bool = True) -> str:
         """Format status message."""
         mode = "Production" if not sim_only else "Simulation Only"
-        return (
-            "*حالة النظام:*\n\n"
-            f"🤖 OSS Work v1.0.0-dev\n"
-            f"📊 الوضع: {mode}\n"
-            "\n"
-            + ("🟢 العمليات حقيقية" if not sim_only else "🔴 جميع العمليات محاكاة")
+        return f"*حالة النظام:*\n\n🤖 OSS Work v1.0.0-dev\n📊 الوضع: {mode}\n\n" + (
+            "🟢 العمليات حقيقية" if not sim_only else "🔴 جميع العمليات محاكاة"
         )
 
     @staticmethod
     def format_models(models: list[dict[str, Any]], count: int) -> str:
         """Format model list."""
-        lines = [f"*النماذج المتاحة ({count}):*" ]
+        lines = [f"*النماذج المتاحة ({count}):*"]
         for m in models[:15]:
             lines.append(f"• {m['name']} ({m['provider']}) — {m.get('category', 'general')}")
         if len(models) > 15:

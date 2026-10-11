@@ -10,13 +10,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Callable
+from datetime import UTC, datetime
+from typing import Any
 
 
 @dataclass
 class AgentCapability:
     """قدرة الوكيل"""
+
     name: str
     description: str
     category: str
@@ -29,6 +30,7 @@ class AgentCapability:
 @dataclass
 class AgentInfo:
     """معلومات الوكيل"""
+
     agent_type: str
     name: str
     description: str | None = None
@@ -77,7 +79,7 @@ class AgentRegistry:
         agent = self.agents.get(agent_type)
         if agent:
             agent.usage_count += 1
-            agent.last_used = datetime.now(timezone.utc).isoformat()
+            agent.last_used = datetime.now(UTC).isoformat()
             if not success:
                 agent.error_count += 1
 

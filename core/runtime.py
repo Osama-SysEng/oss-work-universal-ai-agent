@@ -220,12 +220,13 @@ class DesktopAPIMode:
             )
 
         @app.get("/models")
-        async def list_models():
+        async def list_models(limit: int = 50, offset: int = 0):
+            limit = max(1, min(limit, 500))
+            offset = max(0, offset)
             try:
                 from core.services.model_router import get_router
                 router = get_router()
-                return {
-                    "models": [
+                all_models = [
                         {
                             "id": m.id,
                             "name": m.name,
@@ -239,6 +240,11 @@ class DesktopAPIMode:
                         }
                         for m in router._model_map.values()
                     ]
+                return {
+                    "models": all_models[offset:offset + limit],
+                    "total": len(all_models),
+                    "limit": limit,
+                    "offset": offset,
                 }
             except Exception as e:
                 raise HTTPException(500, f"فشل: {e}")

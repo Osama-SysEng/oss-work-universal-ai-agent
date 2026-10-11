@@ -234,8 +234,10 @@ async def submit_task(
 
 
 @app.get("/models")
-async def list_models():
-    """عرض النماذج المتاحة للخدمה."""
+async def list_models(limit: int = 50, offset: int = 0):
+    """عرض النماذج المتاحة للخدمة."""
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
     try:
         from core.services.model_router import get_router
         router = get_router()
@@ -252,7 +254,8 @@ async def list_models():
                 "api_available": m.api_available,
                 "browser_url": m.browser_url,
             })
-        return {"models": models}
+        total = len(models)
+        return {"models": models[offset:offset + limit], "total": total, "limit": limit, "offset": offset}
     except Exception as e:
         raise HTTPException(500, f"فشل في عرض النماذج: {e}")
 

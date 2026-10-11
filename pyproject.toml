@@ -33,6 +33,9 @@ docker = ["docker>=7.0"]
 oss-work = "core.main:main"
 oss-work-cli = "interfaces.cli.main:app"
 
+[tool.setuptools.packages.find]
+include = ["core*", "interfaces*", "memory*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

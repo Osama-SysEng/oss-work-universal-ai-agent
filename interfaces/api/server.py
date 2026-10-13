@@ -64,9 +64,7 @@ _rate_limiter = RateLimiter(*_rate_limit_from_env())
 class TaskRequest(BaseModel):
     """طلب مهمة — يعمل مثل أي API لنموذج ذكاء اصطناعي."""
 
-    task: str = Field(
-        ..., min_length=2, max_length=10000, description="المهمة المراد معالجتها. مثل موجه لـ ChatGPT."
-    )
+    task: str = Field(..., min_length=2, max_length=10000, description="المهمة المراد معالجتها. مثل موجه لـ ChatGPT.")
     user_id: str = Field(default="local", min_length=1, max_length=128, description="معرف المستخدم لتتبع السجل")
     context: dict = Field(default_factory=dict, description="سياق اختياري")
 

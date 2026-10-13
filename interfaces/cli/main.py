@@ -1,15 +1,15 @@
 """
 OSS Work — CLI Interface.
 
-واجهة سطر الأوامر للوكيل. يدعم وضع桌面 المستقل (بدون تلجرام).
+واجهة سطر الأوامر للوكيل. يدعم وضع سطح المكتب المستقل (بدون تلجرام).
 
-الأ使い方:
+الاستخدام:
     oss-work run              — تشغيل الوكيل بالوضع المضبوط
     oss-work chat "مهمة"     — معالجة مهمة عبر CLI
     oss-work status           — عرض حالة النظام
     oss-work models           — عرض النماذج المتاحة
     oss-work telegram         — تشغيل بوت التلجرام
-    oss-work desktop          — تشغيل وضع桌面 فقط
+    oss-work desktop          — تشغيل وضع سطح المكتب فقط
 """
 
 from __future__ import annotations
@@ -117,7 +117,7 @@ def run_cmd() -> None:
 
 @app.command(name="telegram")
 def telegram_cmd() -> None:
-    """تشغيل وضع التلجرام فقط (رابط بين الهاتف和桌面)."""
+    """تشغيل وضع التلجرام فقط (رابط بين الهاتف وسطح المكتب)."""
     config = load_config()
 
     if not config.bot_token:
@@ -143,7 +143,7 @@ def telegram_cmd() -> None:
 
 @app.command(name="desktop")
 def desktop_cmd() -> None:
-    """تشغيل وضع桌面 فقط (بدون تلجرام)."""
+    """تشغيل وضع سطح المكتب فقط (بدون تلجرام)."""
     config = load_config()
     processor = TaskProcessor(config)
 
@@ -170,7 +170,7 @@ def chat_cmd(
     task: str = typer.Argument(..., help="المهمة المراد معالجتها"),
     user: str = typer.Option("local", "--user", "-u", help="معرف المستخدم"),
 ) -> None:
-    """معالجة مهمة عبر CLI (وضع桌面 المستقل)."""
+    """معالجة مهمة عبر CLI (وضع سطح المكتب المستقل)."""
     typer.echo(f"\n🤖 معالجة: {task}")
     typer.echo("---")
 
@@ -376,7 +376,7 @@ def data_dir_cmd() -> None:
 
 
 class DesktopCLIMode:
-    """وضع CLI التفاعلي على桌面."""
+    """وضع CLI التفاعلي على سطح المكتب."""
 
     def __init__(self, config: AgentConfig, processor: TaskProcessor):
         self.config = config
@@ -475,7 +475,7 @@ class DesktopCLIMode:
 
 
 class HybridMode:
-    """تشغيل التلجرام و桌面 معًا."""
+    """تشغيل التلجرام وسطح المكتب معًا."""
 
     def __init__(self, config: AgentConfig, processor: TaskProcessor):
         self.config = config
@@ -507,11 +507,11 @@ class HybridMode:
 
             from interfaces.api.server import app as api_app
 
-            typer.echo(f"🌐桌面 API: http://{self.config.api_host}:{self.config.api_port}")
+            typer.echo(f"🌐سطح المكتب API: http://{self.config.api_host}:{self.config.api_port}")
             tasks.append(uvicorn.run(api_app, host=self.config.api_host, port=self.config.api_port, log_level="info"))
         else:
-            typer.echo("💻桌面 CLI: نشط")
-            typer.echo("   (استخدم 'oss-work desktop' لبدء桌面 منفصل)")
+            typer.echo("💻سطح المكتب CLI: نشط")
+            typer.echo("   (استخدم 'oss-work desktop' لبدء سطح مكتب منفصل)")
 
         typer.echo()
         typer.echo("═" * 60)

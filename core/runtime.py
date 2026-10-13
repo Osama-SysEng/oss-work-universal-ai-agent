@@ -1,10 +1,10 @@
 """
 OSS Work — Unified Runtime Entry Point.
 
-يحدد هذا الملف كيفية تشغيل الوكيل بناءً على الإعدادات:
-- telegram: ربط الوكيل بالتلجرام (مهام من الهاتف学桌面)
-- desktop: تشغيل الوكيل على桌面 دون تلجرام (مثل أي نموذج ذكاء)
-- hybrid: كلا الوضعين معًا
+This file decides how to run the agent based on the settings:
+- telegram: link the agent to Telegram (tasks from the phone to the desktop)
+- desktop: run the agent on the desktop without Telegram (like any AI model)
+- hybrid: both modes together
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from core.processor import TaskProcessor
 
 
 def print_header(title: str, width: int = 60) -> None:
-    """اطبع رأسًا مزخرفًا."""
+    """Print a decorated header."""
     print()
     print("═" * width)
     print(f"  {title}")
@@ -36,7 +36,7 @@ def print_header(title: str, width: int = 60) -> None:
 
 
 def print_status_box(config: AgentConfig) -> None:
-    """اطبع صندوق الحالة."""
+    """Print the status box."""
     print(f"  الوضع:          {config.mode}")
     print(f"  المحاكاة:        {'ON' if config.simulation_only else 'OFF'}")
     if config.telegram_enabled and config.bot_token:
@@ -52,7 +52,7 @@ def print_status_box(config: AgentConfig) -> None:
 
 
 async def process_task(processor: TaskProcessor, task: str) -> dict[str, Any]:
-    """معالجة مهمة وعرض النتيجة."""
+    """Process a task and display the result."""
     result = await processor.process(task)
 
     status = result.get("status", "unknown")
@@ -89,10 +89,10 @@ async def process_task(processor: TaskProcessor, task: str) -> dict[str, Any]:
 
 class DesktopCLIMode:
     """
-    تشغيل الوكيل كواجهة CLI مستقلة على桌面.
+    Run the agent as a standalone CLI on the desktop.
 
-    بدون التلجرام — مثل أي نموذج ذكاء اصطناعي آخر.
-    تفاعل مباشر عبر سطر الأوامر.
+    Without Telegram — like any other AI model.
+    Direct interaction via the command line.
     """
 
     def __init__(self, config: AgentConfig, processor: TaskProcessor):
@@ -100,7 +100,7 @@ class DesktopCLIMode:
         self.processor = processor
 
     async def start(self) -> None:
-        """تشغيل وضع CLI التفاعلي."""
+        """Run the interactive CLI mode."""
         print_header("OSS Work — Desktop CLI Mode (Standalone Agent)")
 
         print("  استخدم هذا للاستخدام المحلي دون التلجرام")
@@ -160,7 +160,7 @@ class DesktopCLIMode:
                 print()
                 continue
 
-            # معالجة المهمة
+            # Process the task
             print("⏳ جاري المعالجة...")
             await process_task(self.processor, task)
 
@@ -172,10 +172,10 @@ class DesktopCLIMode:
 
 class DesktopAPIMode:
     """
-    تشغيل الوكيل كـ API محلي على桌面.
+    Run the agent as a local API on the desktop.
 
-    يستخدمه تطبيقات桌面 الأخرى عبر HTTP requests.
-    يعمل مثل أي نموذج ذكاء اصطناعي — إرسال مهمة، استقبال رد.
+    Other desktop applications use it via HTTP requests.
+    Works like any AI model — send a task, receive a reply.
     """
 
     def __init__(self, config: AgentConfig, processor: TaskProcessor):
@@ -183,7 +183,7 @@ class DesktopAPIMode:
         self.processor = processor
 
     async def start(self) -> None:
-        """تشغيل API محلي."""
+        """Run the local API."""
         import uvicorn
         from fastapi import FastAPI, HTTPException
         from pydantic import BaseModel, Field
@@ -300,11 +300,11 @@ class DesktopAPIMode:
 
 class TelegramMode:
     """
-    تشغيل الوكيل ك봇 تلجرام — ربط بين الهاتف和桌面.
+    Run the agent as a Telegram bot — a link between phone and desktop.
 
-    المهام تصل من الهاتف عبر التلجرام
-    تُعالج على桌面 عبر المعالج المشترك
-    والنتائج ترجع للهاتف عبر التلجرام
+    Tasks arrive from the phone via Telegram,
+    are processed on the desktop via the shared processor,
+    and the results return to the phone via Telegram.
     """
 
     def __init__(self, config: AgentConfig, processor: TaskProcessor):
@@ -312,7 +312,7 @@ class TelegramMode:
         self.processor = processor
 
     async def start(self) -> None:
-        """تشغيل بوت التلجرام."""
+        """Run the Telegram bot."""
         if not self.config.bot_token:
             print("❌ TELEGRAM_BOT_TOKEN غير مضبوط في .env")
             print("   احصل على التوكن من @BotFather على التلجرام")
@@ -323,7 +323,7 @@ class TelegramMode:
 
         print(f"  التوكن:     {self.config.bot_token[:20]}...")
         print(f"  المستخدم:   {self.config.bot_username or '@unknown'}")
-        print("  الوضع:      المهام من الهاتف →桌面 → النتائج للهاتف")
+        print("  Flow:       tasks from phone -> desktop -> results to phone")
         print(f"  المحاكاة:   {'ON' if self.config.simulation_only else 'OFF'}")
 
         if self.config.simulation_only:
@@ -333,13 +333,13 @@ class TelegramMode:
             print()
 
         print()
-        print("  أرسل /start ل봇 على التلجرام لبدء الاستخدام")
+        print("  Send /start to the bot on Telegram to start using it")
         print("  أو أرسل أي رسالة مباشرة لمعالجة مهمة")
         print()
         print("═" * 60)
         print()
 
-        # استيراد وتشغيل البوت
+        # Import and run the bot
         from interfaces.telegram.bot import BotConfig, OSSWorkTelegramBot
 
         bot_cfg = BotConfig(
@@ -358,19 +358,19 @@ class TelegramMode:
 
 
 class HybridMode:
-    """تشغيل التلجرام و桌面 معًا."""
+    """Run Telegram and desktop together."""
 
     def __init__(self, config: AgentConfig, processor: TaskProcessor):
         self.config = config
         self.processor = processor
 
     async def start(self) -> None:
-        """تشغيل الوضع الهجين."""
+        """Run the hybrid mode."""
         print_header("OSS Work — Hybrid Mode (Telegram + Desktop)")
 
         tasks = []
 
-        # التلجرام
+        # Telegram
         if self.config.telegram_enabled and self.config.bot_token:
             from interfaces.telegram.bot import BotConfig, OSSWorkTelegramBot
 
@@ -381,12 +381,12 @@ class HybridMode:
             bot = OSSWorkTelegramBot(config=bot_cfg, processor=self.processor)
             bot.setup()
 
-            print("📱 التلجرام: نشط — المهام من الهاتف学桌面")
+            print("📱 Telegram: active — tasks from phone to desktop")
             tasks.append(bot.run())
         else:
             print("📱 التلغرام: غير مضبوط")
 
-        # 桌面
+        # Desktop
         if self.config.desktop_mode == "api":
             import uvicorn
             from fastapi import FastAPI
@@ -416,10 +416,10 @@ class HybridMode:
             async def health():
                 return {"status": "ok"}
 
-            print(f"🌐桌面 API: http://{self.config.api_host}:{self.config.api_port}")
+            print(f"🌐 Desktop API: http://{self.config.api_host}:{self.config.api_port}")
             tasks.append(uvicorn.run(app, host=self.config.api_host, port=self.config.api_port, log_level="info"))
         else:
-            print("💻桌面 CLI: نشط")
+            print("💻 Desktop CLI: active")
 
         print()
         print("═" * 60)
@@ -439,7 +439,7 @@ class HybridMode:
 
 
 def main() -> None:
-    """نقطة الدخول الرئيسية — تشغل الوكيل بالوضع المضبوط."""
+    """Main entry point — runs the agent in the configured mode."""
     config = load_config()
     processor = TaskProcessor(config)
 

@@ -122,7 +122,7 @@ def test_default_registries():
     assert cap_registry.is_enabled("code_review")
     assert cap_registry.is_enabled("static_scan")
 
-    # التحقق من أن capability 평양 يعمل
+    # التحقق من أن البحث بالقدرة يعمل
     assert agent_registry.find_by_capability("read_file")[0].agent_type == "file"
     assert agent_registry.find_by_capability("code_execute")[0].agent_type == "code"
     assert agent_registry.find_by_capability("memory_write")[0].agent_type == "memory"

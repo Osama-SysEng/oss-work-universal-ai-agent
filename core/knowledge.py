@@ -1,10 +1,10 @@
 """
-موارد تعليمية مدمجة للوكلاء
-يدعم:
-- قواعد معرفية
-- أنماط التعلم
-- مستندات مرجعية
-- استراتيجيات حل المشكلات
+Built-in learning resources for agents.
+Supports:
+- Knowledge rules
+- Learning patterns
+- Reference documents
+- Problem-solving strategies
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from typing import Any
 
 @dataclass
 class KnowledgeRule:
-    """قاعدة معرفية للوكيل"""
+    """A knowledge rule for the agent."""
 
     id: str
     domain: str
@@ -31,7 +31,7 @@ class KnowledgeRule:
 
 @dataclass
 class LearningPattern:
-    """نمط تعلم للوكيل"""
+    """A learning pattern for the agent."""
 
     name: str
     description: str
@@ -44,7 +44,7 @@ class LearningPattern:
 
 
 class KnowledgeBase:
-    """قاعدة معرفية للوكلاء"""
+    """Knowledge base for agents."""
 
     def __init__(self) -> None:
         self.rules: list[KnowledgeRule] = []
@@ -70,13 +70,13 @@ class KnowledgeBase:
         return self.references.get(key)
 
 
-# قواعد المعرفة الافتراضية
+# Default knowledge rules
 DEFAULT_RULES: list[KnowledgeRule] = [
     KnowledgeRule(
         id="security_code_review_001",
         domain="security",
         rule="Always check for exec/eval before approving code execution",
-        description="코드 실행 전 exec/eval 패턴 체크는 필수",
+        description="Checking for exec/eval patterns before code execution is required",
         priority=10,
         tags=["security", "code", "execution"],
     ),
@@ -84,7 +84,7 @@ DEFAULT_RULES: list[KnowledgeRule] = [
         id="file_operation_approval_001",
         domain="file",
         rule="File mutations require explicit approval before execution",
-        description="ملف التعديلات تحتاج موافقة صريحة",
+        description="File modifications require explicit approval",
         priority=8,
         tags=["file", "write", "delete", "move", "approval"],
     ),
@@ -92,7 +92,7 @@ DEFAULT_RULES: list[KnowledgeRule] = [
         id="external_action_simulation_001",
         domain="external",
         rule="External actions must be simulation-only in safe release",
-        description="الإجراءات الخارجية محاكاة فقط",
+        description="External actions are simulation-only",
         priority=9,
         tags=["external", "simulation", "safe", "release"],
     ),
@@ -100,7 +100,7 @@ DEFAULT_RULES: list[KnowledgeRule] = [
         id="task_decomposition_001",
         domain="task",
         rule="Complex tasks should be decomposed into subtasks with max 5 agents",
-        description="المهام المعقدة تتقسم لـ 5 وكلاء أقصى",
+        description="Complex tasks are split across at most 5 agents",
         priority=7,
         tags=["task", "decomposition", "agents", "orchestration"],
     ),
@@ -108,7 +108,7 @@ DEFAULT_RULES: list[KnowledgeRule] = [
         id="memory_isolation_001",
         domain="memory",
         rule="Memory is per-user isolated with parameterized queries only",
-        description="الذاكرة معزولة لكل مستخدم",
+        description="Memory is isolated per user",
         priority=8,
         tags=["memory", "sqlite", "isolation", "security"],
     ),
@@ -116,7 +116,7 @@ DEFAULT_RULES: list[KnowledgeRule] = [
         id="telemetry_validation_001",
         domain="telemetry",
         rule="Telemetry events must be validated before batching",
-        description="أحداث التيلميتري موجّهة قبل التجميع",
+        description="Telemetry events are validated before batching",
         priority=6,
         tags=["telemetry", "validation", "batching"],
     ),
@@ -125,7 +125,7 @@ DEFAULT_RULES: list[KnowledgeRule] = [
 DEFAULT_PATTERNS: list[LearningPattern] = [
     LearningPattern(
         name="Security Review Pattern",
-        description="مراجعة الأمان النظامية للكود",
+        description="Systematic security review of code",
         steps=[
             "Identify entry points and data flow",
             "Check for dangerous functions (exec, eval, subprocess)",
@@ -139,7 +139,7 @@ DEFAULT_PATTERNS: list[LearningPattern] = [
     ),
     LearningPattern(
         name="File Operation Pattern",
-        description="إجراءات الملفات الآمنة",
+        description="Safe file procedures",
         steps=[
             "Validate path is within allowed root",
             "Check file size against limits",
@@ -152,7 +152,7 @@ DEFAULT_PATTERNS: list[LearningPattern] = [
     ),
     LearningPattern(
         name="Task Decomposition Pattern",
-        description="تقسيم المهام المعقدة",
+        description="Breaking down complex tasks",
         steps=[
             "Analyze task requirements",
             "Identify subtask categories",
@@ -165,7 +165,7 @@ DEFAULT_PATTERNS: list[LearningPattern] = [
     ),
     LearningPattern(
         name="External Integration Pattern",
-        description="تكاملات خارجية آمنة",
+        description="Safe external integrations",
         steps=[
             "Verify simulation-only mode is active",
             "Check policy for external action permissions",
@@ -209,7 +209,7 @@ API Usage (when enabled):
 
 
 class BuiltInKnowledge:
-    """معرفة مدمجة للوكلاء"""
+    """Built-in knowledge for agents."""
 
     def __init__(self) -> None:
         self.kb = KnowledgeBase()
@@ -221,14 +221,14 @@ class BuiltInKnowledge:
             self.kb.add_reference(key, content)
 
     def search_rules(self, query: str) -> list[dict[str, Any]]:
-        """البحث عن قواعد معرفية - ترجع dict للاختبارات"""
+        """Search knowledge rules - returns dicts for tests."""
         return [
             {"id": r.id, "domain": r.domain, "rule": r.rule, "description": r.description, "tags": r.tags}
             for r in self.kb.search(query)
         ]
 
     def get_patterns(self, domain: str) -> list[dict[str, Any]]:
-        """الحصول على أنماط التعلم - ترجع dict للاختبارات"""
+        """Get learning patterns - returns dicts for tests."""
         return [
             {
                 "name": p.name,
@@ -240,11 +240,11 @@ class BuiltInKnowledge:
         ]
 
     def get_reference(self, key: str) -> str | None:
-        """الحصول على مرجع"""
+        """Get a reference."""
         return self.kb.get_reference(key)
 
     def get_summary(self) -> dict[str, Any]:
-        """ملخص قاعدة المعرفة"""
+        """Knowledge base summary."""
         return {
             "rules_count": len(self.kb.rules),
             "patterns_count": len(self.kb.patterns),

@@ -1,12 +1,12 @@
 """
 OSS Work — Shared Task Processor.
 
-معالج المهام المشترك المستخدم من قبل جميع الأوضاع:
-- Telegram mode: المهام من الهاتف学桌面 وترد على الهاتف
-- Desktop CLI: واجهة سطر الأوامر المستقلة
-- Desktop API: API محلي لتطبيقات桌面 الأخرى
+Shared task processor used by all modes:
+- Telegram mode: tasks from the phone to the desktop, replies back to the phone
+- Desktop CLI: standalone command-line interface
+- Desktop API: local API for other desktop applications
 
-모든 الواجهات تستخدم هذا المعالج المركزي.
+All interfaces use this central processor.
 """
 
 from __future__ import annotations
@@ -30,12 +30,12 @@ logger = logging.getLogger(__name__)
 
 class TaskProcessor:
     """
-    معالج المهام المشترك — جميع الواجهات (Telegram, CLI, API) تستخدم هذا.
+    Shared task processor — all interfaces (Telegram, CLI, API) use this.
 
-    المسار:
-    1. imagination engine — يكتمل/يوسع الفكر
-    2. orchestrator — يوجّه عبر عوامل代理 متخصصة
-    3. model router — يستخدم نماذج ذكاء اصطناعي مجانية إذا لزم
+    Pipeline:
+    1. imagination engine — completes/expands the thought
+    2. orchestrator — routes through specialized agents
+    3. model router — uses free AI models if needed
     """
 
     def __init__(self, config: AgentConfig | None = None):
@@ -49,7 +49,7 @@ class TaskProcessor:
         self._history: dict[str, list[dict]] = {}
         self._busy: set[str] = set()
 
-        # JEV client (إذا تم تفعيله)
+        # JEV client (if enabled)
         self.jev_client = None
         if self.config.use_jev and self.config.jev_api_key:
             try:
@@ -65,9 +65,9 @@ class TaskProcessor:
 
     async def process(self, task: str, user_id: str = "local") -> dict[str, Any]:
         """
-        معالجة مهمة عبر المسار الكامل.
+        Process a task through the full pipeline.
 
-        تستخدمها: بوت التلجرام، CLI桌面، API桌面 — جميعها تستدعي هذا.
+        Used by: the Telegram bot, desktop CLI, desktop API — all of them call this.
         """
         if not task or len(task.strip()) < 2:
             return {"status": "failed", "errors": ["المهمة قصيرة جدًا"]}
@@ -82,18 +82,18 @@ class TaskProcessor:
         try:
             started = time.monotonic()
 
-            # المرحلة 1: imagination — يكتمل/يوسع الفكر
+            # Stage 1: imagination — completes/expands the thought
             completed = await self._complete_thought(task, user_id)
 
-            # المرحلة 1.5: JEV routing (إذا متاح)
+            # Stage 1.5: JEV routing (if available)
             jev_info = await self._jev_route(completed)
 
-            # المرحلة 2: orchestrator — يوجّه عبر عوامل代理 متخصصة
-            # ملاحظة: OrchestratorAgent يقرأ self.task من الإنشاء
+            # Stage 2: orchestrator — routes through specialized agents
+            # Note: OrchestratorAgent reads self.task from construction
             orchestrator = OrchestratorAgent(task=completed, context={"user_id": user_id})
             result = orchestrator.execute()
 
-            # المرحلة 3: تسجيل في السجل
+            # Stage 3: record in the history log
             elapsed = (time.monotonic() - started) * 1000
             self._history.setdefault(user_id, []).append(
                 {
@@ -125,7 +125,7 @@ class TaskProcessor:
             self._busy.discard(user_id)
 
     async def process_batch(self, tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """معالجة دفعة من المهام بشكل متوازي."""
+        """Process a batch of tasks in parallel."""
         results = await asyncio.gather(
             *[self.process(t.get("task", ""), t.get("user_id", "local")) for t in tasks],
             return_exceptions=True,
@@ -136,19 +136,19 @@ class TaskProcessor:
 
     async def _jev_route(self, task: str) -> dict:
         """
-        استخدام JEV لتوجيه المهمة - يعيد إضافات إلى result dict.
-        إذا لم يكن JEV متاحًا، يعيد dict فارغ.
+        Use JEV to route the task - returns additions to the result dict.
+        If JEV is not available, returns an empty dict.
         """
         if not self.jev_client:
             return {}
         try:
             from core.jev_client import TASK_ROUTER_CRITERIA
 
-            # توجيه سريع
+            # Fast routing
             route_result = self.jev_client.route_task(
                 task_type="task", task_description=task, criteria=TASK_ROUTER_CRITERIA
             )
-            # جلب الاحتمالات الكاملة
+            # Fetch the full probabilities
             full = self.jev_client.decide_sync(
                 state=task,
                 questions={
@@ -173,7 +173,7 @@ class TaskProcessor:
             return {}
 
     async def _complete_thought(self, task: str, uid: str) -> str:
-        """استخدام محرك الخيال لإنشاء الفكر."""
+        """Use the imagination engine to generate the thought."""
         try:
             return self.imagination.complete_thought(task, {"user_id": uid})
         except Exception as _exc:
@@ -183,7 +183,7 @@ class TaskProcessor:
     # ── Status & History ──────────────────────────────────────────
 
     def get_status(self) -> dict[str, Any]:
-        """حالة المعالج."""
+        """Processor status."""
         return {
             "version": VERSION,
             "mode": self.config.mode,
@@ -195,23 +195,23 @@ class TaskProcessor:
         }
 
     def get_user_history(self, user_id: str) -> list[dict]:
-        """سجل المهام لمستخدم معين."""
+        """Task history for a given user."""
         return self._history.get(user_id, [])
 
     def clear_user_history(self, user_id: str) -> None:
-        """مسح سجل مستخدم."""
+        """Clear a user's history."""
         self._history.pop(user_id, None)
         self._busy.discard(user_id)
 
     def get_all_history(self, limit: int = 100) -> list[dict]:
-        """جميع السجلات لمدة الأخيرة."""
+        """All recent history logs."""
         all_tasks = []
         for user_tasks in self._history.values():
             all_tasks.extend(user_tasks[-limit:])
         return sorted(all_tasks, key=lambda x: x.get("timestamp", 0), reverse=True)[:limit]
 
     def reset(self) -> None:
-        """إعادة تعيين المعالج."""
+        """Reset the processor."""
         self._history.clear()
         self._busy.clear()
         self._task_counter = 0
@@ -226,7 +226,7 @@ _global_processor: TaskProcessor | None = None
 
 
 def get_processor() -> TaskProcessor:
-    """الحصول على معالج مشترك (singleton)."""
+    """Get the shared processor (singleton)."""
     global _global_processor
     if _global_processor is None:
         config = load_config()
@@ -235,6 +235,6 @@ def get_processor() -> TaskProcessor:
 
 
 def reset_processor() -> None:
-    """إعادة تعيين المعالج (للاختبار)."""
+    """Reset the processor (for testing)."""
     global _global_processor
     _global_processor = None

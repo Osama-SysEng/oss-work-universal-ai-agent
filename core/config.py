@@ -1,10 +1,10 @@
 """
 OSS Work — Configuration.
 
-يدعم أوضاع متعددة:
-- telegram: ربط الوكيل بالتلجرام (الهاتف↔桌面)
-- desktop: الوكيل المستقل على桌面 (CLI أو API)
-- hybrid: كلا الوضعين معًا
+Supports multiple modes:
+- telegram: link the agent to Telegram (phone<->desktop)
+- desktop: standalone agent on the desktop (CLI or API)
+- hybrid: both modes together
 """
 
 from __future__ import annotations
@@ -31,19 +31,19 @@ DATA_DIR = "./data"
 
 @dataclass
 class AgentConfig:
-    """إعدادات运行 الوكيل."""
+    """Agent runtime settings."""
 
     # ── Mode ──
     mode: str = "desktop"  # 'telegram' | 'desktop' | 'hybrid'
-    telegram_enabled: bool = False  # تفعيل ربط التلجرام
-    bot_token: str | None = None  # توكن بوت التلجرام
-    bot_username: str | None = None  # اسم البوت (مثلاً @oss_work_bot)
+    telegram_enabled: bool = False  # Enable the Telegram link
+    bot_token: str | None = None  # Telegram bot token
+    bot_username: str | None = None  # Bot name (e.g. @oss_work_bot)
 
     # ── Desktop ──
     desktop_mode: str = "cli"  # 'cli' | 'api' | 'gui'
-    api_enabled: bool = True  # تفعيل API محلي (بالتناقض مع المستخدم)
-    api_host: str = "127.0.0.1"  # مض tribut API
-    api_port: int = 8080  # منفذ API
+    api_enabled: bool = True  # Enable the local API
+    api_host: str = "127.0.0.1"  # API host
+    api_port: int = 8080  # API port
 
     # ── Data ──
     data_dir: str = "./data/oss-work"
@@ -52,8 +52,8 @@ class AgentConfig:
     allowed_root: str = "./data"
 
     # ── Simulation / Production ──
-    simulation_only: bool = True  # محاكاة فقط افتراضيًا
-    approved_actions: bool = False  # Approval مطلوب للعمليات الحقيقية
+    simulation_only: bool = True  # Simulation-only by default
+    approved_actions: bool = False  # Approval required for real operations
 
     # ── Agent Processing ──
     max_threads: int = 1000
@@ -67,11 +67,11 @@ class AgentConfig:
     allow_external: bool = False
 
     # ── JEV / TypeSafe AI ──
-    use_jev: bool = False  # تفعيل نموذج JEV للتصنيف والترتيب
-    jev_api_key: str | None = None  # مفتاح API من TypeSafe (ts_...)
+    use_jev: bool = False  # Enable the JEV model for classification and ranking
+    jev_api_key: str | None = None  # API key from TypeSafe (ts_...)
     jev_base_url: str = "https://api.typesafe.ai/v1"
     jev_model: str = "jev-latest"  # 'jev-latest' | 'jev-1.13.0' | ...
-    jev_timeout: int = 30  # ثواني
+    jev_timeout: int = 30  # seconds
 
     # ── Logging ──
     log_level: str = "INFO"
@@ -100,7 +100,7 @@ class AgentConfig:
 
 
 def load_config(env_path: str | Path | None = None) -> AgentConfig:
-    """تحميل الإعدادات من .env أو متغيرات البيئة."""
+    """Load settings from .env or environment variables."""
     config = AgentConfig()
 
     if env_path is None:
@@ -122,7 +122,7 @@ def load_config(env_path: str | Path | None = None) -> AgentConfig:
 
 
 def _load_from_env_file(config: AgentConfig, path: Path) -> None:
-    """تحميل من ملف .env."""
+    """Load from a .env file."""
     try:
         from dotenv import load_dotenv
 
@@ -188,7 +188,7 @@ def _load_from_env_file(config: AgentConfig, path: Path) -> None:
 
 
 def _load_from_env_vars(config: AgentConfig) -> None:
-    """تحميل من متغيرات البيئة فقط."""
+    """Load from environment variables only."""
     _load_from_env_file(config, Path("/dev/null"))
 
 
@@ -201,27 +201,27 @@ ENV_TEMPLATE = """\
 # OSS Work — Configuration (.env)
 # ═══════════════════════════════════════════════════════════════════
 #
-# الأوضاع المتاحة:
-#   desktop  — الوكيل المستقل على桌面 (CLI + API محلي)
-#   telegram — ربط الوكيل بالتلجرام (الهاتف↔桌面)
-#   hybrid   — كلا الوضعين معًا
+# Available modes:
+#   desktop  — Standalone agent on the desktop (CLI + local API)
+#   telegram — Link the agent to Telegram (phone<->desktop)
+#   hybrid   — Both modes together
 OSS_WORK_MODE=desktop
 
 # ═══════════════════════════════════════════════════════════════════
-# TELEGRAM (لربط الهاتف桌面)
+# TELEGRAM (for linking phone and desktop)
 # ═══════════════════════════════════════════════════════════════════
-# احصل على التوكن من @BotFather على التلجرام
+# Get the token from @BotFather on Telegram
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_BOT_USERNAME=
 
-# تفعيل ربط التلجرام
+# Enable the Telegram link
 OSS_TELEGRAM_ENABLED=false
 
 # ═══════════════════════════════════════════════════════════════════
 # DESKTOP / LOCAL API
 # ═══════════════════════════════════════════════════════════════════
 OSS_DESKTOP_MODE=cli        # cli | api | gui
-OSS_API_ENABLED=true        # تفعيل API محلي (مثل أي نموذج ذكاء اصطناعي)
+OSS_API_ENABLED=true        # Enable the local API (like any other AI model)
 OSS_API_HOST=127.0.0.1
 OSS_API_PORT=8080
 
@@ -236,8 +236,8 @@ OSS_LOG_DIR=./logs
 # ═══════════════════════════════════════════════════════════════════
 # SIMULATION / PRODUCTION
 # ═══════════════════════════════════════════════════════════════════
-OSS_WORK_SIMULATION_ONLY=1      # 0 = إنتاج، 1 = محاكاة
-OSS_APPROVED_ACTIONS=false      # موافقة مطلوبة للعمليات الحقيقية
+OSS_WORK_SIMULATION_ONLY=1      # 0 = production, 1 = simulation
+OSS_APPROVED_ACTIONS=false      # Approval required for real operations
 
 # ═══════════════════════════════════════════════════════════════════
 # AGENT SETTINGS
@@ -247,7 +247,7 @@ OSS_INVENTION_ENABLED=true
 OSS_SIMULATION_DEPTH=100
 
 # ═══════════════════════════════════════════════════════════════════
-# SECURITY (متقدم — استخدم بحذر)
+# SECURITY (advanced — use with caution)
 # ═══════════════════════════════════════════════════════════════════
 OSS_ALLOW_FILE_OPS=false
 OSS_ALLOW_CODE_EXEC=false
@@ -257,10 +257,10 @@ OSS_ALLOW_EXTERNAL=false
 # ═══════════════════════════════════════════════════════════════════
 # JEV / TypeSafe AI
 # ═══════════════════════════════════════════════════════════════════
-# https://typesafe.ai — نموذج System One للتصنيف والترتيب
-# احصل على المفتاح من: https://console.typesafe.ai
-TYPESAFE_API_KEY=              # ts_... — اتركه فارغًا إذا لم تكن متصلًا بـ JEV
-OSS_USE_JEV=false              # true = تفعيل JEV للتصنيف والترتيب
+# https://typesafe.ai — System One model for classification and ranking
+# Get the key from: https://console.typesafe.ai
+TYPESAFE_API_KEY=              # ts_... — leave empty if you are not connected to JEV
+OSS_USE_JEV=false              # true = enable JEV for classification and ranking
 OSS_JEV_MODEL=jev-latest       # jev-latest | jev-1.13.0 | ...
 OSS_JEV_BASE_URL=https://api.typesafe.ai/v1
 OSS_JEV_TIMEOUT=30
@@ -284,7 +284,7 @@ OSS_LOG_LEVEL=INFO
 
 
 def show_config() -> None:
-    """عرض الإعدادات الحالية."""
+    """Show the current settings."""
     config = load_config()
     print(f"\n{'=' * 60}")
     print("  OSS Work — Current Configuration")

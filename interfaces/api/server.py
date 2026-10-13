@@ -1,15 +1,15 @@
 """
 OSS Work — Desktop Local API.
 
-تشغيل الوكيل كـ API محلي على桌面 — 사용할 수 있습니다 مثل أي نموذج ذكاء اصطناعي.
-تطبيقات桌面 الأخرى ترسل HTTP requests وتستقبل ردود.
+تشغيل الوكيل كـ API محلي على سطح المكتب — يمكن استخدامه مثل أي نموذج ذكاء اصطناعي.
+تطبيقات سطح المكتب الأخرى ترسل HTTP requests وتستقبل ردود.
 
 Usage:
     python -m interfaces.api.server
     # أو
     uvicorn interfaces.api.server:app --host 127.0.0.1 --port 8080
 
-مثال من أي تطبيق桌面:
+مثال من أي تطبيق سطح مكتب:
     curl -X POST http://127.0.0.1:8080/task \\
       -H "Content-Type: application/json" \\
       -d '{"task": "صمم نظام إشعارات", "user_id": "تطبيقي"}'
@@ -65,7 +65,7 @@ class TaskRequest(BaseModel):
     """طلب مهمة — يعمل مثل أي API لنموذج ذكاء اصطناعي."""
 
     task: str = Field(
-        ..., min_length=2, max_length=10000, description="المهمة المراد معالجتها. مثل 프롬프트 لـ ChatGPT."
+        ..., min_length=2, max_length=10000, description="المهمة المراد معالجتها. مثل موجه لـ ChatGPT."
     )
     user_id: str = Field(default="local", min_length=1, max_length=128, description="معرف المستخدم لتتبع السجل")
     context: dict = Field(default_factory=dict, description="سياق اختياري")
@@ -104,9 +104,9 @@ class StatusResponse(BaseModel):
 app = FastAPI(
     title="OSS Work — Desktop Local API",
     description="""\
-# API محلي لـ OSS Work على桌面
+# API محلي لـ OSS Work على سطح المكتب
 
-استخدم هذا API للتفاعل مع وكيل OSS Work من أي تطبيق桌面.
+استخدم هذا API للتفاعل مع وكيل OSS Work من أي تطبيق سطح مكتب.
 أرسل مهمة، استعمل ردود — مثل استخدام ChatGPT أو Claude أو أي نموذج ذكاء اصطناعي آخر.
 
 ## الاستخدام السريع
@@ -201,12 +201,12 @@ async def submit_task(
     """
     إرسال مهمة للوكيل.
 
-    هذه هي النهاية الرئيسية. أرسل مهمة (مثل 프롬프트 لـ ChatGPT)،
+    هذه هي النهاية الرئيسية. أرسل مهمة (مثل موجه لـ ChatGPT)،
     واحصل على ردود مع الحل.
 
     يعالج الوكيل المهمة عبر:
     1. محرك Ultra IQ الخيال — يكتمل/يوسع الفكر
-    2. المنسق — يوجّه عبر عوامل代理 متخصصة
+    2. المنسق — يوجّه عبر عوامل متخصصة
     3. موجه النماذج — يستخدم 100+ نماذج ذكاء اصطناعي مجانية إذا لزم
     """
     client_key = request.user_id or "local"
@@ -274,7 +274,7 @@ async def root():
     return {
         "service": "OSS Work — Desktop Local API",
         "version": "0.3.0",
-        "description": "استخدم هذا API للتفاعل مع OSS Work من أي تطبيق桌面.",
+        "description": "استخدم هذا API للتفاعل مع OSS Work من أي تطبيق سطح مكتب.",
         "endpoints": {
             "POST /task": "إرسال مهمة (النهاية الرئيسية)",
             "GET /health": "فحص الحالة",

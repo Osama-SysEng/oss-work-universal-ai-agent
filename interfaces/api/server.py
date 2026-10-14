@@ -25,7 +25,6 @@ Usage:
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 from pathlib import Path
@@ -162,11 +161,15 @@ async def request_id_middleware(request: Request, call_next):
         response.headers["X-Request-ID"] = request_id
         logger.info(
             f"{request.method} {request.url.path} {response.status_code}",
-            extra={"event": "http.access", "fields": {"method": request.method, "path": request.url.path, "status": response.status_code}},
+            extra={
+                "event": "http.access",
+                "fields": {"method": request.method, "path": request.url.path, "status": response.status_code},
+            },
         )
         return response
     finally:
         request_id_ctx.reset(token)
+
 
 # ═══════════════════════════════════════════════════════════════════
 # Endpoints

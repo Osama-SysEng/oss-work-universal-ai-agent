@@ -3,6 +3,7 @@
 Schema per line: timestamp (UTC ISO-8601 ms) + level + service + env + version
 + request_id + event + message. Never log secrets (see REDACTED markers).
 """
+
 from __future__ import annotations
 
 import json
@@ -11,7 +12,7 @@ import os
 import sys
 import uuid
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 SERVICE = os.getenv("SERVICE_NAME", "oss-work")
 ENV = os.getenv("ENVIRONMENT", "development")
@@ -20,15 +21,26 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "info" if ENV == "production" else "debug").u
 
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="-")
 
-_REDACT_KEYS = ("password", "passwd", "token", "secret", "apikey", "api_key",
-                "authorization", "cookie", "set-cookie", "cvv", "card_number",
-                "national_id", "passport")
+_REDACT_KEYS = (
+    "password",
+    "passwd",
+    "token",
+    "secret",
+    "apikey",
+    "api_key",
+    "authorization",
+    "cookie",
+    "set-cookie",
+    "cvv",
+    "card_number",
+    "national_id",
+    "passport",
+)
 
 
 def _redact(obj):
     if isinstance(obj, dict):
-        return {k: ("***" if any(s in k.lower() for s in _REDACT_KEYS) else _redact(v))
-                for k, v in obj.items()}
+        return {k: ("***" if any(s in k.lower() for s in _REDACT_KEYS) else _redact(v)) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
         return [_redact(v) for v in obj]
     return obj
@@ -37,7 +49,7 @@ def _redact(obj):
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
-            "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+            "timestamp": datetime.now(UTC).isoformat(timespec="milliseconds"),
             "level": record.levelname.lower(),
             "service": SERVICE,
             "env": ENV,

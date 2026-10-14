@@ -175,15 +175,6 @@ async def request_id_middleware(request: Request, call_next):
 # Endpoints
 # ═══════════════════════════════════════════════════════════════════
 
-# JEV routes — TypeSafe AI System One Model
-try:
-    from interfaces.api.jev_routes import router as jev_router
-
-    app.include_router(jev_router)
-    logger.info("JEV routes loaded")
-except ImportError:
-    logger.debug("JEV routes not available")
-
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
@@ -276,7 +267,6 @@ async def list_models(limit: int = 50, offset: int = 0):
                     "supports_vision": m.supports_vision,
                     "cost_per_1k_tokens": m.cost_per_1k_tokens,
                     "api_available": m.api_available,
-                    "browser_url": m.browser_url,
                 }
             )
         total = len(models)

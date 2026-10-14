@@ -1,14 +1,13 @@
 """
-OSS Work — CLI Interface.
+OSS Work — CLI Interface (local only).
 
-واجهة سطر الأوامر للوكيل. يدعم وضع سطح المكتب المستقل (بدون تلجرام).
+واجهة سطر الأوامر للوكيل. وضع سطح المكتب المستقل.
 
 الاستخدام:
     oss-work run              — تشغيل الوكيل بالوضع المضبوط
     oss-work chat "مهمة"     — معالجة مهمة عبر CLI
     oss-work status           — عرض حالة النظام
     oss-work models           — عرض النماذج المتاحة
-    oss-work telegram         — تشغيل بوت التلجرام
     oss-work desktop          — تشغيل وضع سطح المكتب فقط
 """
 
@@ -29,7 +28,6 @@ from core.config import VERSION, AgentConfig, load_config
 from core.imagination.engine import UltraIQEngine
 from core.processor import TaskProcessor
 from core.services.model_router import get_router
-from core.services.skill_downloader import get_skill_downloader
 from core.services.updater import get_updater
 
 # ── CLI App ────────────────────────────────────────────────────
@@ -79,19 +77,7 @@ def run_cmd() -> None:
     typer.echo(f"   المحاكاة: {'ON' if config.simulation_only else 'OFF'}")
     typer.echo()
 
-    if config.mode == "telegram":
-        typer.echo("📱 تشغيل وضع التلجرام...")
-        from interfaces.telegram.bot import BotConfig, OSSWorkTelegramBot
-
-        bot_cfg = BotConfig(
-            token=config.bot_token,
-            simulation_only=config.simulation_only,
-        )
-        bot = OSSWorkTelegramBot(config=bot_cfg, processor=processor)
-        bot.setup()
-        asyncio.run(bot.run())
-
-    elif config.mode == "desktop":
+    if config.mode == "desktop":
         if config.api_enabled:
             typer.echo("🌐 تشغيل وضع API المحلي...")
             typer.echo(f"   URL: http://{config.api_host}:{config.api_port}")
@@ -106,39 +92,9 @@ def run_cmd() -> None:
             typer.echo("💻 تشغيل وضع CLI التفاعلي...")
             asyncio.run(DesktopCLIMode(config, processor).start())
 
-    elif config.mode == "hybrid":
-        typer.echo("🔄 تشغيل الوضع الهجين (Telegram + Desktop)...")
-        asyncio.run(HybridMode(config, processor).start())
-
     else:
         typer.echo(f"❌ وضع غير معروف: {config.mode}")
         raise typer.Exit(1)
-
-
-@app.command(name="telegram")
-def telegram_cmd() -> None:
-    """تشغيل وضع التلجرام فقط (رابط بين الهاتف وسطح المكتب)."""
-    config = load_config()
-
-    if not config.bot_token:
-        typer.echo("❌ TELEGRAM_BOT_TOKEN غير مضبوط في .env")
-        typer.echo("   احصل على التوكن من @BotFather على التلجرام")
-        typer.echo("   ثم أضفه إلى .env: TELEGRAM_BOT_TOKEN=xxx")
-        raise typer.Exit(1)
-
-    typer.echo("\n📱 OSS Work — Telegram Mode")
-    typer.echo(f"   التوكن: {config.bot_token[:20]}...")
-    typer.echo(f"   المستخدم: {config.bot_username or '@unknown'}")
-    typer.echo(f"   المحاكاة: {'ON' if config.simulation_only else 'OFF'}")
-    typer.echo()
-
-    processor = TaskProcessor(config)
-    from interfaces.telegram.bot import BotConfig, OSSWorkTelegramBot
-
-    bot_cfg = BotConfig(token=config.bot_token, simulation_only=config.simulation_only)
-    bot = OSSWorkTelegramBot(config=bot_cfg, processor=processor)
-    bot.setup()
-    asyncio.run(bot.run())
 
 
 @app.command(name="desktop")
@@ -214,7 +170,6 @@ def status_cmd() -> None:
     config = load_config()
     typer.echo("\n--- Configuration ---")
     typer.echo(f"Mode: {config.mode}")
-    typer.echo(f"Telegram: {'✅ Enabled' if config.telegram_enabled and config.bot_token else '❌ Not configured'}")
     typer.echo(f"Desktop: {config.desktop_mode} ({'API' if config.api_enabled else 'CLI'})")
     if config.api_enabled:
         typer.echo(f"API URL: http://{config.api_host}:{config.api_port}")
@@ -228,7 +183,6 @@ def status_cmd() -> None:
         "asyncpg": _check_import("asyncpg"),
         "redis": _check_import("redis"),
         "qdrant_client": _check_import("qdrant_client"),
-        "telegram": _check_import("telegram"),
         "celery": _check_import("celery"),
         "scikit-learn": _check_import("sklearn"),
         "opencv": _check_import("cv2"),
@@ -309,36 +263,17 @@ def imagine_cmd(
 
 
 @app.command(name="skill")
-def skill_cmd(
-    capability: str = typer.Argument(..., help="المهارة المراد اكتسابها"),
-    install: bool = typer.Option(True, "--install/--no-install", help="تثبيت بعد العثور"),
-) -> None:
-    """البحث وتثبيت مهارة."""
-    downloader = get_skill_downloader()
+def skill_cmd() -> None:
+    """عرض المهارات المبنية ذاتيا (تبنى عبر oss-os skill-new)."""
+    from ossys import skills as oss_skills
 
-    typer.echo(f"\n🔍 البحث عن مهارة: {capability}")
-
-    installed = downloader.list_installed()
-    if installed:
-        typer.echo("\n--- المهارات المثبتة ---")
-        for skill in installed:
-            typer.echo(f"  • {skill.name} ({skill.source}) — {skill.capability}")
-
-    if not install:
-        typer.echo("\nالبحث فقط — لا تثبيت.")
-        return
-
-    typer.echo("\nمحاولة الاكتساب...")
-    result = _run_async(downloader.acquire_skill(capability))
-
-    if result.status == "installed":
-        typer.echo(f"\n✅ مثبت: {result.name} at {result.path}")
-    elif result.status == "already_installed":
-        typer.echo(f"\nℹ️ مثبت بالفعل: {result.name}")
-    elif result.status == "not_found":
-        typer.echo(f"\n❌ غير موجود: {result.error}")
-    elif result.status == "failed":
-        typer.echo(f"\n❌ فشل: {result.error}")
+    built = oss_skills.list_built()
+    typer.echo("\n--- Self-built skills (local) ---")
+    if not built:
+        typer.echo("  (none yet — build one with: oss-os skill-new <name> <purpose>)")
+    for skill in built:
+        typer.echo(f"  • {skill['name']} — {skill['summary']}")
+    typer.echo()
 
 
 @app.command(name="update")
@@ -434,8 +369,6 @@ class DesktopCLIMode:
                     for m in router._model_map.values():
                         typer.echo(f"   • {m.name} ({m.provider.value})")
                         typer.echo(f"     المجال: {m.category}")
-                        if m.browser_url:
-                            typer.echo(f"     الرابط: {m.browser_url}")
                         typer.echo()
                 except Exception as e:
                     logger.exception("Unhandled exception in main.py")
@@ -472,56 +405,6 @@ class DesktopCLIMode:
                 typer.echo("\n📋 النتيجة:")
                 typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
                 typer.echo()
-
-
-class HybridMode:
-    """تشغيل التلجرام وسطح المكتب معًا."""
-
-    def __init__(self, config: AgentConfig, processor: TaskProcessor):
-        self.config = config
-        self.processor = processor
-
-    async def start(self) -> None:
-        """تشغيل الوضع الهجين."""
-        typer.echo()
-        typer.echo("═" * 60)
-        typer.echo("  OSS Work — Hybrid Mode (Telegram + Desktop)")
-        typer.echo("═" * 60)
-        typer.echo()
-
-        tasks = []
-
-        if self.config.telegram_enabled and self.config.bot_token:
-            from interfaces.telegram.bot import BotConfig, OSSWorkTelegramBot
-
-            bot_cfg = BotConfig(token=self.config.bot_token, simulation_only=self.config.simulation_only)
-            bot = OSSWorkTelegramBot(config=bot_cfg, processor=self.processor)
-            bot.setup()
-            typer.echo("📱 التلجرام: نشط")
-            tasks.append(bot.run())
-        else:
-            typer.echo("📱 التلجرام: غير مضبوط")
-
-        if self.config.desktop_mode == "api":
-            import uvicorn
-
-            from interfaces.api.server import app as api_app
-
-            typer.echo(f"🌐سطح المكتب API: http://{self.config.api_host}:{self.config.api_port}")
-            tasks.append(uvicorn.run(api_app, host=self.config.api_host, port=self.config.api_port, log_level="info"))
-        else:
-            typer.echo("💻سطح المكتب CLI: نشط")
-            typer.echo("   (استخدم 'oss-work desktop' لبدء سطح مكتب منفصل)")
-
-        typer.echo()
-        typer.echo("═" * 60)
-        typer.echo()
-
-        if not tasks:
-            typer.echo("❌ لا يوجد وضع مضبوط.")
-            raise typer.Exit(1)
-
-        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 # ── Entry Point ──────────────────────────────────────────────────

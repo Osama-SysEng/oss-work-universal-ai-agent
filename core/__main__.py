@@ -1,16 +1,13 @@
 """
-OSS Work — Main Package Entry Point.
+OSS Work — Main Package Entry Point (local only).
 
 أستخدام:
     python -m core                  — تشغيل الوكيل بالوضع المضبوط في .env
     python -m core --mode desktop   — تشغيل وضع سطح المكتب
-    python -m core --mode telegram  — تشغيل وضع التلجرام
-    python -m core --mode hybrid    — تشغيل كلا الوضعين
     python -m core --task "مهمة"    — معالجة مهمة فورية والخروج
 
 أو من CLI:
     oss-work run                     — نفس الشيء
-    oss-work telegram                — تشغيل وضع التلجرام فقط
     oss-work desktop                 — تشغيل وضع سطح المكتب فقط
     oss-work chat "مهمة"            — معالجة مهمة عبر CLI
 """
@@ -31,9 +28,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--mode",
-        choices=["telegram", "desktop", "hybrid"],
+        choices=["desktop"],
         default=None,
-        help="الوضع المطلوب (telegram, desktop, hybrid)",
+        help="الوضع المطلوب (desktop)",
     )
     parser.add_argument(
         "--task",

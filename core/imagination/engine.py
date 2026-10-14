@@ -290,7 +290,7 @@ class UltraIQEngine:
         Maps the cognitive vector of incoming partial thought
         and returns the likely completed thought + intent.
 
-        Used by Telegram interface to finish user's message
+        Used by local interfaces to finish user input
         before they send it.
         """
         if not partial_input or len(partial_input.strip()) < 3:

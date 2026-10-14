@@ -21,7 +21,7 @@
 
 OSS Work is a **zero-setup, zero-cost autonomous AI agent** that unifies 100+ leading AI models into a single interface, controls the full device stack, learns from every session, and reasons through the **Ultra IQ Imagination Engine** at 300 billion parallel cognitive threads.
 
-A non-technical user sends a message on Telegram and OSS Work handles everything — browsing, coding, file management, social media, email, calendar, security scanning, and more. No paid API keys required. No complex setup. No technical knowledge needed.
+A local user runs a task and OSS Work handles everything on this machine — reading, coding, file management, office documents, security scanning, and more. No paid API keys required. No complex setup.
 
 ### The Five Pillars
 
@@ -29,7 +29,7 @@ A non-technical user sends a message on Telegram and OSS Work handles everything
 |---|---|
 | **Ultra IQ Imagination Engine** | A parallel reasoning engine — not an LLM wrapper, not retrieval — that simulates 300B cognitive threads, cross-domain pattern synthesis across 50+ domains, temporal dilation (internal time 10,000× faster), future simulation before any action, and genuine invention. |
 | **100+ Zero-Cost Models** | Routes tasks to American, Chinese, local, and open-source models — all at zero API cost using free tiers, local inference, and browser-based simulation. Includes GPT-4o, Claude, Gemini, Grok, Kimi, Qwen, DeepSeek, ERNIE, Ollama, and more. |
-| **Full Device Stack** | Browser automation (Playwright), code execution (sandboxed Python), file management (root-confined), email, calendar, social media publishing, Telegram bot, CLI, and a desktop app (Tauri). |
+| **Full Device Stack** | Browser automation (Playwright), root-confined file management, office suite, read-only web reader, loopback hosting, CLI, and a desktop app (Tauri). |
 | **Continuous Learning** | ML pattern detection over session transcripts, invention trigger for genuinely novel solutions, and behavioral profiling that improves routing over time. |
 | **Open Source** | Apache-2.0 licensed. 100+ files, 8 specialist agents, bilingual docs (Arabic + English), CI/CD pipeline, Docker compose, and a production-grade database schema (TimescaleDB). |
 
@@ -46,7 +46,7 @@ cd oss-work-universal-ai-agent
 python -m venv .venv
 . .venv/bin/activate   # Windows: .venv\Scripts\activate
 
-# Optional: install full deps (Playwright, Telegram, httpx for real integrations)
+# Optional: install full deps (Playwright, httpx for local integrations)
 pip install -e ".[dev]"
 
 # Run the imagination engine (simulation mode — no API keys needed)
@@ -60,8 +60,8 @@ print(result.solution)
 # Run tests
 python -m pytest tests/ -v
 
-# Start Telegram bot (requires BOT_TOKEN in .env)
-python -m interfaces.telegram.bot
+# Start the OS (local only, no keys needed)
+python -m ossys.boot boot
 
 # Start CLI
 python -m interfaces.cli.main "review this code for security issues"
@@ -74,7 +74,7 @@ python -m interfaces.cli.main "review this code for security issues"
 ```
 ┌─────────────────────────────────────────────────────┐
 │                   USER INTERFACES                    │
-│  Telegram Bot │ Web Dashboard │ CLI │ Desktop App    │
+│  Web Dashboard │ CLI │ Desktop App    │
 └──────────────────────┬──────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────┐
@@ -89,8 +89,8 @@ python -m interfaces.cli.main "review this code for security issues"
 └──────────────────────┬──────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────┐
-│               EXTERNAL INTEGRATIONS                  │
-│  100+ AI Models │ Meta Suite │ Telegram │ Google     │
+│               LOCAL INTEGRATIONS                   │
+│  Local engine │ Office suite │ Reader │ Hosting    │
 │  GitHub │ Microsoft │ Any API                        │
 └─────────────────────────────────────────────────────┘
 ```
@@ -153,7 +153,7 @@ OSS Work runs a pool of 8 specialist agents orchestrated by a keyword-based task
 | **Code Agent** | Write, execute, and review Python code in sandbox | ✅ Production |
 | **File Agent** | Root-confined file listing, reading, writing | ✅ Production |
 | **Security Agent** | Static analysis, secrets detection, file sanitization | ✅ Production + ML patterns |
-| **Integration Agent** | Meta Suite, Telegram, GitHub, Google, Microsoft APIs | ✅ Production |
+| **Integration Agent** | Loopback webhooks/REST + local log (no cloud services) | ✅ Production |
 | **Learning Agent** | ML pattern detection + invention trigger + profiling | ✅ Production |
 | **Memory Agent** | SQLite recall + audit logging | ✅ Production |
 | **Update Agent** | Delta patch application + rollback | ✅ Production |
@@ -194,8 +194,8 @@ oss-work-universal-ai-agent/
 │   │   ├── memory_agent.py
 │   │   └── update_agent.py
 │   ├── services/
-│   │   ├── model_router.py   # 100+ model routing
-│   │   ├── skill_downloader.py
+│   │   ├── model_router.py   # local-only routing
+│   │   ├── local_engine.py   # llama-server client (no keys)
 │   │   └── updater.py
 │   ├── contracts.py          # TaskRequest, TaskResult, DecisionRecord
 │   ├── policy.py             # Safety policy system
@@ -205,14 +205,21 @@ oss-work-universal-ai-agent/
 │   ├── orchestrator.py       # Multi-agent orchestrator
 │   ├── agent_registry.py     # Agent registry
 │   └── advanced.py           # Security, evolution, telemetry
+├── ossys/                    # oss-work OS v1 (local only, no keys)
+│   ├── kernel.py             # boot + real dispatch + background
+│   ├── task_registry.py      # 300 task agents (data, not files)
+│   ├── archetypes.py         # 30 agent archetypes
+│   ├── scheduler.py          # persistent background jobs
+│   ├── skills.py             # self-built skills (yes/no)
+│   ├── office/               # documents / sheets / decks
+│   ├── browser.py            # read-only web reader
+│   ├── hosting.py            # loopback hosting (no Docker)
+│   └── boot.py               # oss-os CLI
 ├── interfaces/
-│   ├── telegram/
-│   │   ├── bot.py            # Full Telegram bot
-│   │   ├── handlers.py       # Message/voice/image/document handlers
-│   │   ├── keyboards.py      # Inline keyboard builders
-│   │   └── formatters.py     # Response formatting
-│   └── cli/
-│       └── main.py           # Typer CLI
+│   ├── cli/
+│   │   └── main.py           # Typer CLI (local only)
+│   └── api/
+│       └── server.py         # Desktop Local API
 ├── memory/
 │   ├── postgres.py           # PostgreSQL + TimescaleDB
 │   ├── qdrant.py             # Qdrant vector store
@@ -230,7 +237,7 @@ oss-work-universal-ai-agent/
 ├── tests/
 │   ├── test_imagination.py
 │   ├── test_model_router.py
-│   ├── test_telegram.py
+│   ├── test_ossys_kernel.py  # OS kernel + strict routing
 │   └── test_browser_agent.py
 ├── docs/
 │   ├── en/
@@ -260,7 +267,7 @@ oss-work-universal-ai-agent/
 
 OSS Work is open source under the Apache-2.0 license. Contributions are welcome — especially:
 
-- Real integration adapters (Meta, Telegram, GitHub, Google, Microsoft APIs)
+- Local OS services (office suite, reader, hosting, skills)
 - New model provider support in the router
 - Expanded imagination engine domains and strategies
 - Desktop app frontend in React

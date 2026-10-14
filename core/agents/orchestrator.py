@@ -47,7 +47,7 @@ class OrchestratorAgent(BaseAgent):
             "code": ("code", "program", "refactor"),
             "file": ("file", "folder", "directory"),
             "security": ("security", "scan", "vulnerability"),
-            "integration": ("telegram", "github", "google", "whatsapp", "api"),
+            "integration": ("webhook", "rest_api", "local", "api"),
             "memory": ("memory", "remember"),
             "learning": ("learn", "pattern"),
         }

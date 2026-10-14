@@ -25,7 +25,30 @@ def test_orchestrator_is_bounded_and_reports_no_external_actions():
 
 
 def test_integration_is_simulation_only():
-    result = IntegrationAgent(context={"task": "send", "integration": "telegram", "action": "send"}).execute()
+    result = IntegrationAgent(context={"task": "send", "integration": "webhook", "action": "send"}).execute()
     assert result["status"] == "simulated"
     assert result["data"]["action"] == "send"
     assert result["decision"]["external_action_attempted"] is False
+
+
+def test_integration_refuses_non_localhost():
+    import asyncio
+    import time
+
+    agent = IntegrationAgent(
+        context={
+            "task": "send",
+            "integration": "webhook",
+            "action": "send",
+            "url": "https://example.com/hook",
+        }
+    )
+    result = asyncio.run(agent._webhook_handler("webhook", "send", time.monotonic()))
+    assert result["status"] == "failed"
+    assert "loopback" in result["data"]["error"]
+
+
+def test_unknown_integration_rejected():
+    result = IntegrationAgent(context={"task": "x", "integration": "telegram", "action": "send"}).execute()
+    assert result["status"] == "failed"
+    assert "local-only" in result["data"]["error"]

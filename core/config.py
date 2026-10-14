@@ -1,10 +1,8 @@
 """
-OSS Work — Configuration.
+OSS Work — Configuration (local only).
 
-Supports multiple modes:
-- telegram: link the agent to Telegram (phone<->desktop)
-- desktop: standalone agent on the desktop (CLI or API)
-- hybrid: both modes together
+Single mode:
+- desktop: standalone agent on the desktop (CLI or local API)
 """
 
 from __future__ import annotations
@@ -34,10 +32,7 @@ class AgentConfig:
     """Agent runtime settings."""
 
     # ── Mode ──
-    mode: str = "desktop"  # 'telegram' | 'desktop' | 'hybrid'
-    telegram_enabled: bool = False  # Enable the Telegram link
-    bot_token: str | None = None  # Telegram bot token
-    bot_username: str | None = None  # Bot name (e.g. @oss_work_bot)
+    mode: str = "desktop"  # desktop only (local system)
 
     # ── Desktop ──
     desktop_mode: str = "cli"  # 'cli' | 'api' | 'gui'
@@ -66,13 +61,6 @@ class AgentConfig:
     allow_browser: bool = False
     allow_external: bool = False
 
-    # ── JEV / TypeSafe AI ──
-    use_jev: bool = False  # Enable the JEV model for classification and ranking
-    jev_api_key: str | None = None  # API key from TypeSafe (ts_...)
-    jev_base_url: str = "https://api.typesafe.ai/v1"
-    jev_model: str = "jev-latest"  # 'jev-latest' | 'jev-1.13.0' | ...
-    jev_timeout: int = 30  # seconds
-
     # ── Logging ──
     log_level: str = "INFO"
     log_to_file: bool = False
@@ -84,14 +72,8 @@ class AgentConfig:
         Path(self.data_dir).mkdir(parents=True, exist_ok=True)
         Path(self.log_dir).mkdir(parents=True, exist_ok=True)
 
-    def is_telegram_mode(self) -> bool:
-        return self.mode == "telegram" or (self.mode == "hybrid" and self.telegram_enabled)
-
     def is_desktop_mode(self) -> bool:
-        return self.mode == "desktop" or self.mode == "hybrid"
-
-    def is_hybrid_mode(self) -> bool:
-        return self.mode == "hybrid"
+        return self.mode == "desktop"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -141,11 +123,6 @@ def _load_from_env_file(config: AgentConfig, path: Path) -> None:
     if mode:
         config.mode = mode
 
-    # Telegram
-    config.telegram_enabled = os.getenv("OSS_TELEGRAM_ENABLED", "").lower() == "true"
-    config.bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip() or None
-    config.bot_username = os.getenv("TELEGRAM_BOT_USERNAME", "").strip() or None
-
     # Desktop
     dm = os.getenv("OSS_DESKTOP_MODE", "").strip()
     if dm:
@@ -174,13 +151,6 @@ def _load_from_env_file(config: AgentConfig, path: Path) -> None:
     config.allow_browser = os.getenv("OSS_ALLOW_BROWSER", "false").lower() == "true"
     config.allow_external = os.getenv("OSS_ALLOW_EXTERNAL", "false").lower() == "true"
 
-    # JEV / TypeSafe AI
-    config.jev_api_key = os.getenv("TYPESAFE_API_KEY", "").strip() or config.jev_api_key
-    config.use_jev = os.getenv("OSS_USE_JEV", "").lower() == "true" or config.use_jev
-    config.jev_base_url = os.getenv("OSS_JEV_BASE_URL", config.jev_base_url)
-    config.jev_model = os.getenv("OSS_JEV_MODEL", config.jev_model)
-    config.jev_timeout = _int("OSS_JEV_TIMEOUT", config.jev_timeout)
-
     # Logging (OSS_LOG_LEVEL with OSS_WORK_LOG_LEVEL alias)
     config.log_level = os.getenv("OSS_LOG_LEVEL", "") or os.getenv("OSS_WORK_LOG_LEVEL", "") or config.log_level
     config.log_to_file = os.getenv("OSS_LOG_TO_FILE", "false").lower() == "true"
@@ -203,19 +173,7 @@ ENV_TEMPLATE = """\
 #
 # Available modes:
 #   desktop  — Standalone agent on the desktop (CLI + local API)
-#   telegram — Link the agent to Telegram (phone<->desktop)
-#   hybrid   — Both modes together
 OSS_WORK_MODE=desktop
-
-# ═══════════════════════════════════════════════════════════════════
-# TELEGRAM (for linking phone and desktop)
-# ═══════════════════════════════════════════════════════════════════
-# Get the token from @BotFather on Telegram
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_BOT_USERNAME=
-
-# Enable the Telegram link
-OSS_TELEGRAM_ENABLED=false
 
 # ═══════════════════════════════════════════════════════════════════
 # DESKTOP / LOCAL API
@@ -255,17 +213,6 @@ OSS_ALLOW_BROWSER=false
 OSS_ALLOW_EXTERNAL=false
 
 # ═══════════════════════════════════════════════════════════════════
-# JEV / TypeSafe AI
-# ═══════════════════════════════════════════════════════════════════
-# https://typesafe.ai — System One model for classification and ranking
-# Get the key from: https://console.typesafe.ai
-TYPESAFE_API_KEY=              # ts_... — leave empty if you are not connected to JEV
-OSS_USE_JEV=false              # true = enable JEV for classification and ranking
-OSS_JEV_MODEL=jev-latest       # jev-latest | jev-1.13.0 | ...
-OSS_JEV_BASE_URL=https://api.typesafe.ai/v1
-OSS_JEV_TIMEOUT=30
-
-# ═══════════════════════════════════════════════════════════════════
 # API RATE LIMIT
 # ═══════════════════════════════════════════════════════════════════
 OSS_RATE_LIMIT=60
@@ -290,7 +237,6 @@ def show_config() -> None:
     print("  OSS Work — Current Configuration")
     print(f"{'=' * 60}")
     print(f"  Mode:           {config.mode}")
-    print(f"  Telegram:       {'✅ Enabled' if config.telegram_enabled and config.bot_token else '❌ Not configured'}")
     print(f"  Desktop:        {config.desktop_mode} ({'API' if config.api_enabled else 'CLI'})")
     if config.api_enabled:
         print(f"  API URL:        http://{config.api_host}:{config.api_port}")

@@ -1,13 +1,9 @@
 """
-Model Router — Zero-cost routing to 100+ AI models.
-Routes tasks to the best available model without requiring API keys.
-Uses free tiers, local models, and browser-based simulation.
+Model Router — local-only routing for oss-work OS v1.
 
-Supports:
-- American models (ChatGPT, Claude, Gemini, Grok, Perplexity, Copilot)
-- Chinese models (Kimi, Qwen, DeepSeek, ERNIE, Zhipu)
-- Local models (Ollama, LM Studio, GPT4All, llama.cpp)
-- Open-source APIs (HuggingFace, Together AI, Groq, OpenRouter)
+Routes tasks to the independent local engine (llama-server) and,
+optionally, a user-installed Ollama. Cloud and browser providers were
+removed: no API keys, no external calls.
 """
 
 from __future__ import annotations
@@ -16,7 +12,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-import asyncio
 import os
 import time
 from collections import Counter
@@ -53,9 +48,8 @@ class ModelInfo:
     context_window: int
     supports_vision: bool = False
     supports_streaming: bool = True
-    cost_per_1k_tokens: float = 0.0  # 0 = free tier
+    cost_per_1k_tokens: float = 0.0  # 0 = local, no billing
     api_available: bool = True
-    browser_url: str | None = None
     default_for: list[str] = field(default_factory=list)
 
 
@@ -72,7 +66,6 @@ MODELS = [
         supports_vision=True,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://chat.openai.com",
     ),
     ModelInfo(
         "gpt4o_mini",
@@ -83,7 +76,6 @@ MODELS = [
         supports_vision=True,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://chat.openai.com",
     ),
     ModelInfo(
         "chatgpt_free",
@@ -94,7 +86,6 @@ MODELS = [
         supports_vision=False,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://chat.openai.com",
     ),
     ModelInfo(
         "claude",
@@ -105,7 +96,6 @@ MODELS = [
         supports_vision=True,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://claude.ai",
     ),
     ModelInfo(
         "gemini_pro",
@@ -116,7 +106,6 @@ MODELS = [
         supports_vision=True,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://gemini.google.com",
     ),
     ModelInfo(
         "gemini_flash",
@@ -127,7 +116,6 @@ MODELS = [
         supports_vision=True,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://gemini.google.com",
     ),
     ModelInfo(
         "grok",
@@ -138,7 +126,6 @@ MODELS = [
         supports_vision=False,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://x.com/i/grok",
     ),
     ModelInfo(
         "perplexity",
@@ -149,7 +136,6 @@ MODELS = [
         supports_vision=False,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://perplexity.ai",
     ),
     ModelInfo(
         "copilot",
@@ -160,7 +146,6 @@ MODELS = [
         supports_vision=True,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://copilot.microsoft.com",
     ),
     # ── Chinese ──
     ModelInfo(
@@ -172,7 +157,6 @@ MODELS = [
         supports_vision=False,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://kimi.moonshot.cn",
     ),
     ModelInfo(
         "qwen",
@@ -183,7 +167,6 @@ MODELS = [
         supports_vision=True,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://tongyi.aliyun.com",
     ),
     ModelInfo(
         "deepseek",
@@ -194,7 +177,6 @@ MODELS = [
         supports_vision=False,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://deepseek.com",
     ),
     ModelInfo(
         "deepseek_coder",
@@ -205,7 +187,6 @@ MODELS = [
         supports_vision=False,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https:// DeepSeek.com",
     ),
     ModelInfo(
         "ernie",
@@ -216,7 +197,6 @@ MODELS = [
         supports_vision=True,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://qianfan.baidubce.com",
     ),
     ModelInfo(
         "glm",
@@ -227,7 +207,6 @@ MODELS = [
         supports_vision=False,
         cost_per_1k_tokens=0.0,
         api_available=False,
-        browser_url="https://open.bigmodel.cn",
     ),
     # ── Local ──
     ModelInfo(
@@ -484,22 +463,9 @@ class ModelRouter:
             return await self._check_ollama()
         elif model.provider == ModelProvider.LOCAL:
             return await self._check_local()
-        elif model.provider == ModelProvider.HUGGINGFACE:
-            return bool(os.getenv("HUGGINGFACE_API_KEY"))
-        elif model.provider == ModelProvider.GROQ:
-            return bool(os.getenv("GROQ_API_KEY"))
-        elif model.provider == ModelProvider.OPENROUTER:
-            return bool(os.getenv("OPENROUTER_API_KEY"))
-        elif model.provider == ModelProvider.DEEPSEEK:
-            return bool(os.getenv("DEEPSEEK_API_KEY"))
         else:
-            # Browser-based: check if Playwright is available
-            try:
-                import playwright.async_api  # noqa: F401
-
-                return True
-            except ImportError:
-                return False
+            # OS v1 is local-only: cloud/browser providers were removed.
+            return False
 
     async def _check_ollama(self) -> bool:
         """Check if Ollama is running locally."""
@@ -634,91 +600,24 @@ class ModelRouter:
         }
 
     async def _call_model(self, model_id: str, task: str, requirements: dict[str, Any]) -> str:
-        """Call a specific model and return its response."""
+        """Call a specific model and return its response (local providers only)."""
         model = self._model_map.get(model_id)
         if not model:
             raise ValueError(f"Unknown model: {model_id}")
 
-        # API-based models
-        if model.api_available:
+        # Local engine models
+        if model.api_available and model.provider == ModelProvider.LOCAL:
             return await self._call_api_model(model, task, requirements)
 
-        # Browser-based models
-        if model.browser_url:
-            return await self._call_browser_model(model, task)
-
-        raise ValueError(f"No API or browser route for model: {model_id}")
+        raise ValueError(
+            f"Model '{model_id}' is unavailable: OS v1 is local-only (cloud and browser providers were removed)."
+        )
 
     async def _call_api_model(self, model: ModelInfo, task: str, requirements: dict[str, Any]) -> str:
-        """Call a model via its API."""
+        """Call a local model via the independent engine (no keys)."""
         import httpx
 
-        if model.provider == ModelProvider.GROQ:
-            api_key = os.getenv("GROQ_API_KEY")
-            if not api_key:
-                raise ValueError("GROQ_API_KEY not set")
-            url = "https://api.groq.com/openai/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-            payload = {
-                "model": model.id,
-                "messages": [{"role": "user", "content": task}],
-                "max_tokens": requirements.get("max_tokens", 4096),
-                "temperature": requirements.get("temperature", 0.7),
-            }
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                r = await client.post(url, json=payload, headers=headers)
-                r.raise_for_status()
-                data = r.json()
-                return data["choices"][0]["message"]["content"]
-
-        elif model.provider == ModelProvider.HUGGINGFACE:
-            api_key = os.getenv("HUGGINGFACE_API_KEY")
-            if not api_key:
-                raise ValueError("HUGGINGFACE_API_KEY not set")
-            url = f"https://api-inference.huggingface.co/models/{model.id}"
-            headers = {"Authorization": f"Bearer {api_key}"}
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                r = await client.post(url, json={"inputs": task}, headers=headers)
-                r.raise_for_status()
-                return r.json().get("generated_text", r.text)
-
-        elif model.provider == ModelProvider.OPENROUTER:
-            api_key = os.getenv("OPENROUTER_API_KEY")
-            if not api_key:
-                raise ValueError("OPENROUTER_API_KEY not set")
-            url = "https://openrouter.ai/api/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://oss-work.local",
-            }
-            payload = {
-                "model": model.id,
-                "messages": [{"role": "user", "content": task}],
-            }
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                r = await client.post(url, json=payload, headers=headers)
-                r.raise_for_status()
-                data = r.json()
-                return data["choices"][0]["message"]["content"]
-
-        elif model.provider == ModelProvider.TOGETHER:
-            api_key = os.getenv("TOGETHER_API_KEY")
-            if not api_key:
-                raise ValueError("TOGETHER_API_KEY not set")
-            url = "https://api.together.xyz/v1/chat/completions"
-            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-            payload = {
-                "model": model.id,
-                "messages": [{"role": "user", "content": task}],
-            }
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                r = await client.post(url, json=payload, headers=headers)
-                r.raise_for_status()
-                data = r.json()
-                return data["choices"][0]["message"]["content"]
-
-        elif model.provider == ModelProvider.LOCAL:
+        if model.provider == ModelProvider.LOCAL:
             # oss-work independent engine: llama-server (OpenAI-compatible, no keys).
             base_url = os.getenv("OSS_LOCAL_URL", "http://127.0.0.1:11400").rstrip("/")
             timeout = float(os.getenv("OSS_LOCAL_TIMEOUT", "120"))
@@ -735,37 +634,7 @@ class ModelRouter:
                 data = r.json()
                 return data["choices"][0]["message"]["content"]
 
-        else:
-            raise ValueError(f"No API implementation for provider: {model.provider}")
-
-    async def _call_browser_model(self, model: ModelInfo, task: str) -> str:
-        """Call a model via its web interface (zero API cost)."""
-        from playwright.async_api import async_playwright
-
-        url = model.browser_url
-        if not url:
-            raise ValueError(f"No browser URL for model: {model.id}")
-
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)
-            page = await browser.new_page()
-            try:
-                await page.goto(url, wait_until="networkidle", timeout=30000)
-
-                # Find and fill the input
-                input_selector = "textarea, input[type='text'], input[type='prompt']"
-                await page.wait_for_selector(input_selector, timeout=10000)
-                await page.fill(input_selector, task)
-                await page.press(input_selector, "Enter")
-
-                # Wait for response
-                await asyncio.sleep(3)  # Brief wait for model to respond
-
-                # Extract response (model-specific — simplified)
-                body_text = await page.inner_text("body")
-                return body_text[:3000]  # Truncate
-            finally:
-                await browser.close()
+        raise ValueError(f"No API implementation for provider: {model.provider} (OS v1 is local-only).")
 
     async def _local_fallback(self, task: str, requirements: dict[str, Any]) -> str | None:
         """Try local inference as fallback (oss engine first, then Ollama)."""

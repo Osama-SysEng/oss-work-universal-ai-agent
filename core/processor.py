@@ -1,10 +1,10 @@
 """
 OSS Work — Shared Task Processor.
 
-Shared task processor used by all modes:
-- Telegram mode: tasks from the phone to the desktop, replies back to the phone
+Shared task processor used by all local interfaces:
 - Desktop CLI: standalone command-line interface
 - Desktop API: local API for other desktop applications
+- oss-os kernel: the OS dispatches through this
 
 All interfaces use this central processor.
 """
@@ -30,12 +30,12 @@ logger = logging.getLogger(__name__)
 
 class TaskProcessor:
     """
-    Shared task processor — all interfaces (Telegram, CLI, API) use this.
+    Shared task processor — all interfaces (CLI, API, OS kernel) use this.
 
     Pipeline:
     1. imagination engine — completes/expands the thought
     2. orchestrator — routes through specialized agents
-    3. model router — uses free AI models if needed
+    3. model router — uses the local engine if needed
     """
 
     def __init__(self, config: AgentConfig | None = None):
@@ -48,16 +48,6 @@ class TaskProcessor:
         )
         self._history: dict[str, list[dict]] = {}
         self._busy: set[str] = set()
-
-        # JEV client (if enabled)
-        self.jev_client = None
-        if self.config.use_jev and self.config.jev_api_key:
-            try:
-                from core.jev_client import JEVClient
-
-                self.jev_client = JEVClient(api_key=self.config.jev_api_key, base_url=self.config.jev_base_url)
-            except ImportError:
-                pass
         self._task_counter: int = 0
         self._started_at: float = time.time()
 
@@ -67,7 +57,7 @@ class TaskProcessor:
         """
         Process a task through the full pipeline.
 
-        Used by: the Telegram bot, desktop CLI, desktop API — all of them call this.
+        Used by: desktop CLI, desktop API, oss-os kernel — all of them call this.
         """
         if not task or len(task.strip()) < 2:
             return {"status": "failed", "errors": ["المهمة قصيرة جدًا"]}
@@ -84,9 +74,6 @@ class TaskProcessor:
 
             # Stage 1: imagination — completes/expands the thought
             completed = await self._complete_thought(task, user_id)
-
-            # Stage 1.5: JEV routing (if available)
-            jev_info = await self._jev_route(completed)
 
             # Stage 2: orchestrator — routes through specialized agents
             # Note: OrchestratorAgent reads self.task from construction
@@ -109,8 +96,6 @@ class TaskProcessor:
             result["task_id"] = task_id
             result["latency_ms"] = round(elapsed, 1)
             result["mode"] = self.config.mode
-            if jev_info:
-                result["jev_routing"] = jev_info
 
             return result
 
@@ -133,44 +118,6 @@ class TaskProcessor:
         return [r if isinstance(r, dict) else {"status": "failed", "errors": [str(r)]} for r in results]
 
     # ── Internal ──────────────────────────────────────────────────
-
-    async def _jev_route(self, task: str) -> dict:
-        """
-        Use JEV to route the task - returns additions to the result dict.
-        If JEV is not available, returns an empty dict.
-        """
-        if not self.jev_client:
-            return {}
-        try:
-            from core.jev_client import TASK_ROUTER_CRITERIA
-
-            # Fast routing
-            route_result = self.jev_client.route_task(
-                task_type="task", task_description=task, criteria=TASK_ROUTER_CRITERIA
-            )
-            # Fetch the full probabilities
-            full = self.jev_client.decide_sync(
-                state=task,
-                questions={
-                    "route": {
-                        "type": "choice",
-                        "instructions": "أي فئة تناسب هذا الطلب؟",
-                        "criteria": TASK_ROUTER_CRITERIA,
-                    }
-                },
-            )
-            probs = {}
-            for d in full.decisions:
-                if d.question_name == "route" and d.probabilities:
-                    probs = d.probabilities
-            return {
-                "jev_routed_to": route_result,
-                "jev_confidence": max(probs.values()) if probs else 0.0,
-                "jev_probabilities": probs,
-            }
-        except Exception as e:  # noqa: BLE001 - preserve broad catch; logged below
-            logger.debug(f"JEV routing failed: {e}")
-            return {}
 
     async def _complete_thought(self, task: str, uid: str) -> str:
         """Use the imagination engine to generate the thought."""

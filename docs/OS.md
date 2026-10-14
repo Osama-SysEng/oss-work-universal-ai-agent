@@ -35,5 +35,6 @@ Default route for every task: the local engine
 - 3B local model: light tasks + decisions. Heavy work is split or queued.
 - Browser: no JavaScript, no login, no forms.
 - Office: no native xlsx/pptx editing (CSV + HTML decks instead).
-- Legacy cloud/Telegram code still exists in the repo but is unreachable in
-  strict mode; physical removal is a separate explicit step (Phase 2).
+- Phase 2 (done): cloud/Telegram/JEV/skill-download code physically removed
+  (9 files); integrations are loopback-only; DB `telegram_chat_id` columns
+  kept for data compatibility only and are never used as provider identity.

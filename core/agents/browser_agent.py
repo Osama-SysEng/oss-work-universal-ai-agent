@@ -26,32 +26,8 @@ from core.agents.base import BaseAgent
 from core.contracts import DecisionRecord, TaskResult
 from core.policy import Decision
 
-# ── Model URLs for browser-based AI queries ──────────────────
-
-MODEL_URLS = {
-    "gemini": "https://gemini.google.com",
-    "chatgpt": "https://chat.openai.com",
-    "claude": "https://claude.ai",
-    "kimi": "https://kimi.moonshot.cn",
-    "qwen": "https://tongyi.aliyun.com",
-    "grok": "https://x.com/i/grok",
-    "perplexity": "https://perplexity.ai",
-}
-
-# These selectors would be customized per model in production
-INPUT_SELECTORS = {
-    "gemini": "textarea",
-    "chatgpt": "textarea",
-    "claude": "textarea",
-    "kimi": "textarea",
-}
-
-RESPONSE_SELECTORS = {
-    "gemini": "[data-test-id='chat-message']",
-    "chatgpt": "[data-testid='conversation-turn']",
-    "claude": "[data-testid='message']",
-    "kimi": ".stream-container",
-}
+# Local browser automation only (Playwright drives a local browser).
+# AI-via-web-UI queries were removed in OS v1: no logins, no cloud models.
 
 
 @dataclass
@@ -111,7 +87,6 @@ class BrowserAgent(BaseAgent):
                 "screenshot",
                 "click",
                 "extract_links",
-                "ai_model_query",
             )
         return ("browser_control", "scrape_simulation", "form_preview")
 
@@ -215,8 +190,6 @@ class BrowserAgent(BaseAgent):
                 result = await self._click(page, url, self.context.get("selector"), started)
             elif task == "extract_links":
                 result = await self._extract_links(page, url, started)
-            elif task == "ai_model_query":
-                result = await self._ai_browser_query(page, started)
             else:
                 result = self._unknown_task(task, url, started)
         finally:
@@ -438,88 +411,6 @@ class BrowserAgent(BaseAgent):
             started,
         )
 
-    async def _ai_browser_query(self, page, started: float) -> dict[str, Any]:
-        """
-        Query an AI model via its web interface.
-        Zero API cost — uses the model's web UI directly.
-        Requires user to be logged into the model's website.
-        """
-        import time
-
-        model = self.context.get("model", "gemini")
-        prompt = self.context.get("prompt", "")
-
-        if not prompt:
-            return self.finalize(
-                TaskResult("failed", {"error": "No prompt provided for AI query"}).as_dict(),
-                started,
-            )
-
-        url = MODEL_URLS.get(model)
-        if not url:
-            return self.finalize(
-                TaskResult(
-                    "failed",
-                    {
-                        "error": f"Unknown model: {model}. Supported: {list(MODEL_URLS.keys())}",
-                    },
-                ).as_dict(),
-                started,
-            )
-
-        input_sel = INPUT_SELECTORS.get(model, "textarea")
-        resp_sel = RESPONSE_SELECTORS.get(model, ".response")
-
-        try:
-            await page.goto(url, wait_until="networkidle", timeout=30000)
-            await page.fill(input_sel, prompt)
-            await page.press(input_sel, "Enter")
-
-            # Wait for response (model-specific timing)
-            try:
-                await page.wait_for_selector(resp_sel, timeout=60000)
-                response = await page.inner_text(resp_sel)
-            except Exception as _exc:
-                logger.exception("Unhandled exception in browser_agent.py")
-                # Response might not have loaded yet
-                import asyncio
-
-                await asyncio.sleep(5)
-                response = await page.inner_text("body")
-
-            elapsed = (time.monotonic() - started) * 1000
-
-            return self.finalize(
-                TaskResult(
-                    "completed",
-                    {
-                        "action": "ai_model_query",
-                        "model": model,
-                        "prompt_length": len(prompt),
-                        "response_preview": response[:2000],
-                        "response_full_length": len(response),
-                        "elapsed_ms": round(elapsed, 2),
-                    },
-                ).as_dict(),
-                started,
-            )
-        except Exception as e:
-            logger.exception("Unhandled exception in browser_agent.py")
-            elapsed = (time.monotonic() - started) * 1000
-            return self.finalize(
-                TaskResult(
-                    "failed",
-                    {
-                        "action": "ai_model_query",
-                        "model": model,
-                        "error": str(e),
-                        "note": "Ensure you are logged into the model's website in the browser.",
-                        "elapsed_ms": round(elapsed, 2),
-                    },
-                ).as_dict(),
-                started,
-            )
-
     async def _launch_and_execute(self, task: str, url: str | None, started: float) -> dict[str, Any]:
         """Launch browser and execute task — async entry point from sync execute()."""
         from playwright.async_api import async_playwright
@@ -551,7 +442,6 @@ class BrowserAgent(BaseAgent):
                         "screenshot",
                         "click",
                         "extract_links",
-                        "ai_model_query",
                     ],
                 },
             ).as_dict(),

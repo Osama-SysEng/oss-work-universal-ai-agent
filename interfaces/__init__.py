@@ -1,1 +1,1 @@
-"""OSS Work interfaces — Telegram, CLI, Web."""
+"""OSS Work interfaces — CLI, Web (local only)."""

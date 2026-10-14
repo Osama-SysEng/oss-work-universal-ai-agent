@@ -19,7 +19,7 @@
 
 ## What Is OSS Work?
 
-OSS Work is a **zero-setup, zero-cost autonomous AI agent** that unifies 100+ leading AI models into a single interface, controls the full device stack, learns from every session, and reasons through the **Ultra IQ Imagination Engine** at 300 billion parallel cognitive threads.
+OSS Work is a **zero-setup, zero-cost autonomous AI agent** that runs fully on your machine: a local inference engine (no API keys), 300 task agents over 30 archetypes, an office suite, a read-only web reader, loopback app hosting, and background work — reasoned through the **Ultra IQ Imagination Engine**.
 
 A local user runs a task and OSS Work handles everything on this machine — reading, coding, file management, office documents, security scanning, and more. No paid API keys required. No complex setup.
 
@@ -27,11 +27,11 @@ A local user runs a task and OSS Work handles everything on this machine — rea
 
 | Pillar | What it means |
 |---|---|
-| **Ultra IQ Imagination Engine** | A parallel reasoning engine — not an LLM wrapper, not retrieval — that simulates 300B cognitive threads, cross-domain pattern synthesis across 50+ domains, temporal dilation (internal time 10,000× faster), future simulation before any action, and genuine invention. |
-| **100+ Zero-Cost Models** | Routes tasks to American, Chinese, local, and open-source models — all at zero API cost using free tiers, local inference, and browser-based simulation. Includes GPT-4o, Claude, Gemini, Grok, Kimi, Qwen, DeepSeek, ERNIE, Ollama, and more. |
+| **Ultra IQ Imagination Engine** | A parallel reasoning engine — not an LLM wrapper, not retrieval — that explores many solution threads, synthesizes patterns across domains, simulates outcomes before any action, and records genuinely novel solutions. |
+| **Local Engine, Zero Cost** | All reasoning runs on the independent local engine (llama-server + local GGUF model) with optional user-installed Ollama — no API keys, no cloud calls, no billing. |
 | **Full Device Stack** | Browser automation (Playwright), root-confined file management, office suite, read-only web reader, loopback hosting, CLI, and a desktop app (Tauri). |
 | **Continuous Learning** | ML pattern detection over session transcripts, invention trigger for genuinely novel solutions, and behavioral profiling that improves routing over time. |
-| **Open Source** | Apache-2.0 licensed. 100+ files, 8 specialist agents, bilingual docs (Arabic + English), CI/CD pipeline, Docker compose, and a production-grade database schema (TimescaleDB). |
+| **Open Source** | Apache-2.0 licensed. 78 Python modules, 7 specialist agents + orchestrator + 300 OS task agents, bilingual docs (Arabic + English), CI/CD pipeline, and a local SQLite state store (Postgres/Timescale optional, never required). |
 
 ---
 
@@ -103,12 +103,11 @@ This is the core differentiator. OSS Work's imagination engine is a **genuine pa
 
 ### What it does
 
-- **300 billion concurrent cognitive threads** — simulates reasoning across every angle simultaneously
-- **50+ reasoning domains** — General, Code, Creative, Research, Arabic, Chinese, Business, Ethics, Security, Systems, Health, Education, Future, Legal, Finance, Data, Cloud, DevOps, Marketing, Philosophy, Science, History, and more
-- **Temporal dilation** — internal time runs 10,000× faster than real time, enabling deep exploration before returning
-- **Future simulation** — before any action, simulates three time horizons (near, medium, long-term) with probability estimates and risk registers
-- **Genuine invention** — when novelty exceeds threshold, generates solutions that do not yet exist in the world
-- **Cross-domain synthesis** — builds N×N bridges between domains to find connections no single domain would see
+- **Many concurrent reasoning threads** — explores every angle simultaneously (bounded by `max_threads`)
+- **39 reasoning domains** — General, Code, Creative, Research, Arabic, Business, Ethics, Security, Systems, Health, Education, Future, Legal, Finance, Data, Marketing, Philosophy, Science, History, and more
+- **Future simulation** — before any action, simulates near/medium/long-term horizons with probability estimates and risk registers
+- **Genuine invention** — when novelty exceeds threshold, records solutions not seen before in local history
+- **Cross-domain synthesis** — builds bridges between domains to find connections no single domain would see
 
 ### A tiny example
 
@@ -131,21 +130,20 @@ The engine runs entirely offline. No API calls. No network. Just parallel reason
 
 ---
 
-## Zero-Cost Model Routing
+## Local Model Routing
 
-OSS Work routes every task to the best available model **at zero API cost**:
+OSS Work routes every task locally **at zero API cost**:
 
-- **Browser simulation** — automates the web interface of any model (GPT-4o, Claude, Gemini, Kimi, Qwen, DeepSeek, etc.) using Playwright. No API key needed.
-- **Local models** — runs Ollama, LM Studio, GPT4All, or llama.cpp locally. Free, private, offline.
-- **Free API tiers** — when API keys are configured, uses Groq, HuggingFace, OpenRouter, Together AI, or DeepSeek free tiers.
+- **Independent engine** — llama-server (llama.cpp) with a local quantized model on loopback. No API key needed, nothing leaves the machine.
+- **Optional Ollama** — if the user installed Ollama separately, it serves as a second local fallback.
 
-The `ModelRouter` classifies tasks by content (code, Arabic, Chinese, creative, search, fast, etc.) and routes to the best candidate with automatic failover.
+The `ModelRouter` classifies tasks by content (code, Arabic, creative, fast, etc.) and routes to the local engine with automatic failover. `OSS_OS_STRICT=true` (default) keeps automatic routing local-only.
 
 ---
 
 ## Multi-Agent System
 
-OSS Work runs a pool of 8 specialist agents orchestrated by a keyword-based task decomposition engine:
+OSS Work runs 7 specialist agents plus an orchestrator (keyword-based task decomposition):
 
 | Agent | Purpose | Status |
 |---|---|---|
@@ -157,7 +155,7 @@ OSS Work runs a pool of 8 specialist agents orchestrated by a keyword-based task
 | **Learning Agent** | ML pattern detection + invention trigger + profiling | ✅ Production |
 | **Memory Agent** | SQLite recall + audit logging | ✅ Production |
 | **Update Agent** | Delta patch application + rollback | ✅ Production |
-| **Model Router** | 100+ model routing with browser/local/API fallback | ✅ Production |
+| **Model Router** | Local-only routing (independent engine + optional Ollama) | ✅ Production |
 
 ---
 

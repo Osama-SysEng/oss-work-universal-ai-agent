@@ -4,7 +4,7 @@ The cognitive core of OSS Work. Not an LLM wrapper. Not a retrieval system. A pa
 
 ## What It Is
 
-The Ultra IQ Imagination Engine is the engine that makes OSS Work unique. It does not call an LLM. It does not retrieve a document. It reasons natively in parallel across 300 billion simulated cognitive threads, cross-domain pattern synthesis across 50+ domains, temporal dilation making its internal time 10,000× faster than real time, and genuine invention — producing solutions that do not exist yet in the world.
+The Ultra IQ Imagination Engine is the engine that makes OSS Work unique. It does not call an LLM. It does not retrieve a document. It reasons in parallel across 39 domains (bounded thread pool, `max_threads`), synthesizes patterns across domains, simulates outcomes before acting, and records novel solutions for review. "Threads" are lightweight exploration tasks (string operations, dict lookups, list appends) — not parallel minds.
 
 The engine is simulation-only in the current release. It generates rich, imaginative, plausible, well-reasoned outputs without executing any real action. Every response includes:
 
@@ -121,7 +121,7 @@ This produces a well-calibrated 0.0–1.0 score that grows with the volume and a
 
 ## Performance
 
-The engine runs ~300 billion simulated cognitive threads per request. In simulation mode, each thread is lightweight (string operations, dict lookups, list appends). Real-world benchmarks in the current release:
+The engine explores a bounded thread pool per request (default `max_threads=1000`, fewer domains active by default). Each thread is lightweight (string operations, dict lookups, list appends). Indicative local timings:
 
 - Small tasks: ~50ms
 - Medium tasks: ~80ms
@@ -156,6 +156,6 @@ The engine is simulation-only by default. It never executes actions. All outputs
 ## References
 
 See also:
-- [ZERO_COST_MODELS.md](./ZERO_COST_MODELS.md) — zero-cost model routing
+- [ZERO_COST_MODELS.md](./ZERO_COST_MODELS.md) — local model routing
 - [محرك-الخيال.md](../AR/محرك-الخيال.md) — Arabic documentation
 - [../../README.md](../../README.md) — project overview

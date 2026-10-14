@@ -189,16 +189,15 @@ class UltraIQEngine:
     """
     The Imagination Engine — OSS Work's cognitive core.
 
-    Runs parallel reasoning threads across 50+ domains,
+    Runs parallel reasoning threads across 39 domains,
     synthesizes cross-domain patterns, simulates futures,
     and invents novel solutions when no known approach exists.
 
     Inspired by Osama Mohamed Fathy's cognitive style:
-    - 300B parallel cognitive threads (conceptually)
+    - Bounded parallel exploration threads (max_threads)
     - Cross-domain pattern synthesis
-    - Temporal dilation: internal time 10,000x faster
-    - Future simulation before any action (Tesla mode)
-    - Genuine invention from first principles
+    - Future simulation before any action
+    - Invention from first principles, recorded for review
     - Thought completion: finishes ideas before stated
     """
 

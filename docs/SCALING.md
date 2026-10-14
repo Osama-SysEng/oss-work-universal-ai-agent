@@ -24,5 +24,5 @@
 - `TaskProcessor` is in-process; concurrent `/task` calls share one event
   loop — long model calls block others. Needs a job queue for multi-user.
 - Memory backends (`memory/redis.py` optional, else local) are per-process.
-- 100+ model registry is static; `/models` pagination only bounds payload
+- Model registry is static data; `/models` pagination only bounds payload
   size, not compute.

@@ -111,3 +111,50 @@ class TestModelCategories:
         assert "general" in categories
         assert "code" in categories
         assert "fast" in categories
+
+
+class TestOssLocalEngine:
+    """oss-work independent engine wiring (llama-server, no keys)."""
+
+    def test_oss_local_registered(self):
+        router = ModelRouter()
+        model = router.get_provider("oss_local")
+        assert model is not None
+        assert model.provider == ModelProvider.LOCAL
+        assert model.api_available is True
+
+    def test_offline_fallback_prefers_oss_local(self):
+        assert ROUTING_TABLE["offline_fallback"][0] == "oss_local"
+
+    def test_local_unavailable_when_down(self, monkeypatch):
+        import asyncio
+
+        import httpx
+
+        class _DeadClient:
+            def __init__(self, *a, **k):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *a):
+                return False
+
+            async def get(self, *a, **k):
+                raise httpx.ConnectError("down")
+
+            async def post(self, *a, **k):
+                raise httpx.ConnectError("down")
+
+        monkeypatch.setattr(httpx, "AsyncClient", _DeadClient)
+        router = ModelRouter()
+        assert asyncio.run(router.is_available("oss_local")) is False
+
+    def test_local_fallback_none_when_all_down(self, monkeypatch):
+        import asyncio
+
+        monkeypatch.setenv("OSS_LOCAL_URL", "http://127.0.0.1:9")
+        router = ModelRouter()
+        result = asyncio.run(router._local_fallback("hi", {}))
+        assert result is None

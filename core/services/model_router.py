@@ -290,6 +290,17 @@ MODELS = [
         cost_per_1k_tokens=0.0,
         api_available=True,
     ),
+    ModelInfo(
+        "oss_local",
+        "oss-work Local Engine (llama-server + Qwen2.5-3B Q4_K_M, no keys)",
+        ModelProvider.LOCAL,
+        "general",
+        context_window=4096,
+        supports_vision=False,
+        cost_per_1k_tokens=0.0,
+        api_available=True,
+        default_for=["general_chat", "offline_fallback"],
+    ),
     # ── Open-source APIs ──
     ModelInfo(
         "huggingface",
@@ -353,7 +364,7 @@ ROUTING_TABLE: dict[str, list[str]] = {
     "general_chat": ["chatgpt_free", "gemini_flash", "claude", "gemini_pro"],
     "markdown_formatting": ["gemini_flash", "groq_llama", "chatgpt_free"],
     "html_generation": ["gpt4o", "deepseek_coder", "qwen", "groq_llama"],
-    "offline_fallback": ["ollama_llama3", "lm_studio", "gpt4all"],
+    "offline_fallback": ["oss_local", "llama_cpp", "ollama_llama3", "lm_studio", "gpt4all"],
 }
 
 
@@ -503,14 +514,22 @@ class ModelRouter:
             return False
 
     async def _check_local(self) -> bool:
-        """Check if any local inference server is running."""
+        """Check if any local inference server is running (oss engine first)."""
         import httpx
 
-        ports = [1234, 8080, 5000]
-        for port in ports:
+        local_url = os.getenv("OSS_LOCAL_URL", "http://127.0.0.1:11400").rstrip("/")
+        try:
+            port = int(local_url.rsplit(":", 1)[-1].rstrip("/"))
+        except ValueError:
+            port = 11400
+        ports = [port, 11400, 1234, 8080, 5000]
+        for seen_port in dict.fromkeys(ports):
             try:
                 async with httpx.AsyncClient(timeout=3.0) as client:
-                    r = await client.get(f"http://localhost:{port}/health", timeout=3.0)
+                    r = await client.get(
+                        f"http://localhost:{seen_port}/health",
+                        timeout=3.0,
+                    )
                     if r.status_code == 200:
                         return True
             except Exception as _exc:  # noqa: BLE001 - preserve broad catch; logged below
@@ -582,14 +601,14 @@ class ModelRouter:
                 last_error = str(e)
                 continue
 
-        # Local fallback
+        # Local fallback (independent engine first, Ollama second)
         local_result = await self._local_fallback(task, req)
         if local_result:
             elapsed = (time.monotonic() - started) * 1000
             return {
                 "status": "completed",
-                "model": "ollama_llama3",
-                "provider": "ollama",
+                "model": "oss_local",
+                "provider": "local",
                 "task_type": task_type,
                 "response": local_result,
                 "latency_ms": round(elapsed, 2),
@@ -689,6 +708,23 @@ class ModelRouter:
                 data = r.json()
                 return data["choices"][0]["message"]["content"]
 
+        elif model.provider == ModelProvider.LOCAL:
+            # oss-work independent engine: llama-server (OpenAI-compatible, no keys).
+            base_url = os.getenv("OSS_LOCAL_URL", "http://127.0.0.1:11400").rstrip("/")
+            timeout = float(os.getenv("OSS_LOCAL_TIMEOUT", "120"))
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                r = await client.post(
+                    f"{base_url}/v1/chat/completions",
+                    json={
+                        "messages": [{"role": "user", "content": task}],
+                        "max_tokens": requirements.get("max_tokens", 512),
+                        "stream": False,
+                    },
+                )
+                r.raise_for_status()
+                data = r.json()
+                return data["choices"][0]["message"]["content"]
+
         else:
             raise ValueError(f"No API implementation for provider: {model.provider}")
 
@@ -722,11 +758,29 @@ class ModelRouter:
                 await browser.close()
 
     async def _local_fallback(self, task: str, requirements: dict[str, Any]) -> str | None:
-        """Try local inference as fallback."""
-        # Try Ollama
-        try:
-            import httpx
+        """Try local inference as fallback (oss engine first, then Ollama)."""
+        import httpx
 
+        # 1) oss-work independent engine (llama-server, OpenAI-compatible)
+        try:
+            base_url = os.getenv("OSS_LOCAL_URL", "http://127.0.0.1:11400").rstrip("/")
+            timeout = float(os.getenv("OSS_LOCAL_TIMEOUT", "120"))
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                r = await client.post(
+                    f"{base_url}/v1/chat/completions",
+                    json={
+                        "messages": [{"role": "user", "content": task}],
+                        "max_tokens": requirements.get("max_tokens", 512),
+                        "stream": False,
+                    },
+                )
+                if r.status_code == 200:
+                    return r.json()["choices"][0]["message"]["content"]
+        except (httpx.HTTPError, KeyError, ValueError) as _exc:
+            logger.debug("oss local engine unavailable: %s", _exc)
+
+        # 2) Ollama (optional, only if the user installed it separately)
+        try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 r = await client.post(
                     "http://localhost:11434/api/generate",

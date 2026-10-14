@@ -32,9 +32,10 @@ docker = ["docker>=7.0"]
 [project.scripts]
 oss-work = "core.main:main"
 oss-work-cli = "interfaces.cli.main:app"
+oss-os = "ossys.boot:main"
 
 [tool.setuptools.packages.find]
-include = ["core*", "interfaces*", "memory*"]
+include = ["core*", "interfaces*", "memory*", "ossys*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

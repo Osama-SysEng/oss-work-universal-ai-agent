@@ -10,6 +10,9 @@ dist/
 !.env.example
 data/
 logs/
+data-os/
+skills-os/
+workspace/
 web/node_modules/
 web/.next/
 *.sqlite3

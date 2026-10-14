@@ -558,6 +558,16 @@ class ModelRouter:
         else:
             candidates = self.get_candidates(task_type)
 
+        # OS strict mode (default): local-only system. Cloud/browser
+        # candidates are skipped even if keys exist. Opt out explicitly:
+        # OSS_OS_STRICT=false (not recommended for the OS).
+        if os.getenv("OSS_OS_STRICT", "true").strip().lower() in ("1", "true", "yes", "on"):
+            candidates = [
+                c
+                for c in candidates
+                if (m := self._model_map.get(c)) and m.provider in (ModelProvider.LOCAL, ModelProvider.OLLAMA)
+            ] or ["oss_local"]
+
         # Try each candidate
         last_error = None
         for candidate_id in candidates:

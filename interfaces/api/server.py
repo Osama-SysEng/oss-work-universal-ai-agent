@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from core.config import load_config
+from core.obs_logging import get_logger, new_request_id, request_id_ctx
 from core.processor import get_processor
 from core.rate_limit import RateLimiter
 
@@ -149,7 +150,23 @@ print(result["data"]["solution"])
     redoc_url="/redoc",
 )
 
-logger = logging.getLogger("oss-work-api")
+logger = get_logger("oss-work-api")
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or new_request_id()
+    token = request_id_ctx.set(request_id)
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        logger.info(
+            f"{request.method} {request.url.path} {response.status_code}",
+            extra={"event": "http.access", "fields": {"method": request.method, "path": request.url.path, "status": response.status_code}},
+        )
+        return response
+    finally:
+        request_id_ctx.reset(token)
 
 # ═══════════════════════════════════════════════════════════════════
 # Endpoints

@@ -28,7 +28,7 @@ Default route for every task: the local engine
 | `office/` | txt/md/csv native; docx only with python-docx; notes-to-HTML decks |
 | `browser.py` | Read-only web reader (no JS/forms/screenshots — refused honestly) |
 | `hosting.py` | Loopback static hosting without Docker |
-| `boot.py` | `oss-os` CLI: boot/status/run/tasks/submit/jobs/drain/skill-new/serve |
+| `boot.py` | `oss-os` CLI: boot/status/run/tasks/submit/jobs/drain/skill-new/office/apps/serve |
 
 ## Honest limits (v1)
 

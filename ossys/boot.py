@@ -1,4 +1,4 @@
-"""oss-os CLI: boot | status | run | tasks | submit | jobs | skills | serve."""
+"""oss-os CLI: boot | status | run | tasks | submit | jobs | drain | skills | office | apps | serve."""
 
 from __future__ import annotations
 
@@ -59,6 +59,44 @@ def cmd_skill_new(args: argparse.Namespace) -> None:
     _print(vars(skills.ask_interactive(args.name, args.purpose)))
 
 
+def cmd_office(args: argparse.Namespace) -> None:
+    from ossys.office import documents
+
+    if args.office_action == "write":
+        _print(documents.write_text(args.name, args.text or ""))
+    elif args.office_action == "read":
+        print(documents.read_text(args.name))
+    elif args.office_action == "sheet-write":
+        import csv
+        import io
+
+        rows = list(csv.DictReader(io.StringIO(args.text or "")))
+        _print(documents.write_sheet(args.name, rows))
+    elif args.office_action == "sheet-read":
+        _print(documents.read_sheet(args.name))
+    elif args.office_action == "sheet-sum":
+        summary = documents.summarize_sheet(args.name)
+        _print({"rows": summary.rows, "columns": summary.columns, "sums": summary.numeric_sums})
+    elif args.office_action == "deck":
+        _print(documents.build_deck(args.title or "Deck", (args.text or "").split("\n---\n")))
+
+
+def cmd_apps(args: argparse.Namespace) -> None:
+    from ossys.hosting import get_manager
+
+    manager = get_manager()
+    if args.apps_action == "register":
+        app = manager.register(args.name, args.directory)
+        _print({"name": app.name, "directory": app.directory})
+    elif args.apps_action == "serve":
+        _print({"name": args.name, "url": manager.serve(args.name)})
+    elif args.apps_action == "stop":
+        manager.stop(args.name)
+        _print({"name": args.name, "running": False})
+    else:
+        _print(manager.list())
+
+
 def cmd_serve(args: argparse.Namespace) -> None:
     """Run the background loop until Ctrl+C (the OS staying on the job)."""
     from ossys import scheduler
@@ -99,6 +137,17 @@ def build_parser() -> argparse.ArgumentParser:
     skill_p.add_argument("name")
     skill_p.add_argument("purpose")
 
+    office_p = sub.add_parser("office", help="Local office suite (txt/md/csv/decks).")
+    office_p.add_argument("office_action", choices=["write", "read", "sheet-write", "sheet-read", "sheet-sum", "deck"])
+    office_p.add_argument("name", help="File name inside the workspace.")
+    office_p.add_argument("--text", default="", help="Content (deck slides separated by a line '---').")
+    office_p.add_argument("--title", default="Deck")
+
+    apps_p = sub.add_parser("apps", help="Local loopback hosting (no Docker).")
+    apps_p.add_argument("apps_action", nargs="?", default="list", choices=["list", "register", "serve", "stop"])
+    apps_p.add_argument("--name", default="")
+    apps_p.add_argument("--directory", default="")
+
     serve_p = sub.add_parser("serve", help="Serve background jobs until stopped.")
     serve_p.add_argument("--interval", type=float, default=5.0)
     return parser
@@ -113,6 +162,8 @@ _HANDLERS = {
     "jobs": cmd_jobs,
     "drain": cmd_drain,
     "skill-new": cmd_skill_new,
+    "office": cmd_office,
+    "apps": cmd_apps,
     "serve": cmd_serve,
 }
 

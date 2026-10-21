@@ -4,37 +4,52 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oss-work"
-version = "1.0.0-dev"
-description = "Open-Source Universal AI Agent — NASA Space Apps Winner · AI Hackathon 1st Place"
+version = "1.0.0"
+description = "OSS Work / OS_V1 — a local, independent, unified AI agent that plans, decides, verifies, and acts"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [{name = "Osama Mohamed Fathy"}]
 requires-python = ">=3.11"
+keywords = ["ai-agent", "local-first", "offline", "multi-agent", "verification", "safety"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# The core runs on the standard library plus these two: the local engine
+# client and the local API. Everything else is optional.
 dependencies = [
-    "playwright>=1.44",
     "httpx>=0.27",
-    "asyncpg>=0.29",
-    "redis>=5.0",
-    "qdrant-client>=1.9",
-    "celery>=5.4",
-    "scikit-learn>=1.4",
-    "numpy>=1.26",
-    "opencv-python>=4.9",
-    "whisper>=1.1.10",
-    "face-recognition>=1.3",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pydantic>=2.6",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-cov>=4.0", "pytest-asyncio>=0.23", "black>=24.0", "ruff>=0.3"]
-docker = ["docker>=7.0"]
+dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.3"]
+browser = ["playwright>=1.44"]
+office = ["python-docx>=1.1"]
+laya = ["torch>=2.2", "transformers>=4.40"]
 
 [project.scripts]
-oss-work = "core.main:main"
-oss-work-cli = "interfaces.cli.main:app"
-oss-os = "ossys.boot:main"
+oss-v1 = "osv1.interface.cli:main"
+oss-v1-api = "osv1.interface.api:main"
+
+[project.urls]
+Homepage = "https://github.com/Osama-SysEng/oss-work-universal-ai-agent"
+Source = "https://github.com/Osama-SysEng/oss-work-universal-ai-agent"
+Issues = "https://github.com/Osama-SysEng/oss-work-universal-ai-agent/issues"
 
 [tool.setuptools.packages.find]
-include = ["core*", "interfaces*", "memory*", "ossys*"]
+include = ["osv1*"]
+
+[tool.setuptools.package-data]
+"osv1.interface" = ["web/*.html", "web/*.css", "web/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -44,11 +59,24 @@ addopts = "-q --tb=short"
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+exclude = [".venv", "data-osv1", "workspace", "skills-osv1"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "C4", "RET", "SIM"]
+ignore = [
+    "S101",  # asserts are used in the test suite
+    "B008",  # FastAPI dependencies call functions in defaults
+    "E501",  # long lines are checked by the formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "B", "E402", "F401"]
+"osv1/interface/web/*" = ["E501"]
 
 [tool.black]
 line-length = 120
 target-version = ["py311"]
 
 [tool.pyright]
-include = ["core/**/*.py", "interfaces/**/*.py", "memory/**/*.py", "tests/**/*.py"]
-exclude = ["web/**", "data/**", ".git/**", ".pytest_cache/**", "__pycache__/**"]
+include = ["osv1/**/*.py", "tests/**/*.py"]
+exclude = ["data-osv1/**", "workspace/**", ".git/**", ".pytest_cache/**", "__pycache__/**"]

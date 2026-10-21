@@ -1,6 +1,7 @@
 .venv/
 __pycache__/
 .pytest_cache/
+.ruff_cache/
 *.py[cod]
 *.egg-info/
 build/
@@ -8,21 +9,20 @@ dist/
 .env
 .env.*
 !.env.example
+
+# Local state (never committed)
+data-osv1/
+skills-osv1/
+workspace/
 data/
 logs/
-data-os/
-skills-os/
-workspace/
-web/node_modules/
-web/.next/
 *.sqlite3
 *.db
 *.log
-.DS_Store
-deploy/secrets/
 
-# added by light repair
-web/out/
-out/
-node_modules/
-.next/
+# Desktop build output
+desktop/src-tauri/target/
+desktop/node_modules/
+
+.DS_Store
+Thumbs.db

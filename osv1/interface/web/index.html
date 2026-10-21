@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OSS Work / OS_V1 — live console</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0d1117; --panel: #131920; --panel-2: #182029; --line: #232c36;
+    --text: #e6edf3; --muted: #8b949e; --accent: #4f9dff; --good: #3fb950;
+    --warn: #d29922; --bad: #f85149; --run: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.55 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { font-size: 15px; margin: 0; letter-spacing: .02em; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .spacer { flex: 1; }
+  .pill {
+    border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px;
+    font-size: 12px; color: var(--muted); background: var(--panel-2);
+  }
+  .pill.on { color: var(--good); border-color: #1c5c33; }
+  .pill.off { color: var(--bad); border-color: #6b2222; }
+  .pill.busy { color: var(--run); border-color: #1f4b7a; }
+  main { display: grid; grid-template-columns: 320px 1fr 360px; gap: 14px; padding: 14px; align-items: start; }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 10px; }
+  textarea, input, select, button {
+    font: inherit; color: var(--text); background: #0b0f14; border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px; width: 100%;
+  }
+  textarea { min-height: 84px; resize: vertical; }
+  button { cursor: pointer; background: #1b2430; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: #16324f; border-color: #2b5c8f; }
+  button.danger { background: #3a1618; border-color: #6b2222; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  .row > * { flex: 1; }
+  .modes { display: flex; gap: 6px; margin-top: 10px; }
+  .modes button.active { background: #16324f; border-color: var(--accent); color: #cfe6ff; }
+  .layers { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .layer {
+    flex: 1; min-width: 88px; text-align: center; padding: 8px 4px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel-2); font-size: 11px; color: var(--muted);
+    transition: background .25s, border-color .25s, color .25s, transform .25s;
+  }
+  .layer.active { background: #10304f; border-color: var(--accent); color: #cfe6ff; transform: translateY(-2px); }
+  .layer.done { border-color: #1c5c33; color: var(--good); }
+  .layer.failed { border-color: #6b2222; color: var(--bad); }
+  .events { max-height: 340px; overflow: auto; font-size: 13px; }
+  .event { display: flex; gap: 8px; padding: 4px 0; border-bottom: 1px solid #1a222b; }
+  .event .name { color: var(--accent); min-width: 172px; }
+  .event .detail { color: var(--muted); flex: 1; word-break: break-word; }
+  .event.fail .name { color: var(--bad); }
+  .event.ok .name { color: var(--good); }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid #1a222b; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  .step { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px solid #1a222b; }
+  .step .tool { color: var(--accent); min-width: 116px; }
+  .check { display: flex; gap: 8px; padding: 4px 0; }
+  .check .mark { min-width: 18px; }
+  .pass .mark { color: var(--good); } .fail .mark { color: var(--bad); }
+  .metric { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #1a222b; }
+  .metric .value { color: var(--accent); }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .bar { height: 4px; background: #1a222b; border-radius: 2px; overflow: hidden; margin-top: 4px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); transition: width .4s; }
+  .answer { white-space: pre-wrap; font-size: 13px; background: var(--panel-2); border: 1px solid var(--line);
+            border-radius: 8px; padding: 10px; max-height: 320px; overflow: auto; }
+  .flash { animation: flash .6s ease-out; }
+  @keyframes flash { from { background: #16324f; } to { background: transparent; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>OSS Work / OS_V1</h1>
+  <span class="sub">local unified model — no provider, no key</span>
+  <span class="pill" id="engine">engine: …</span>
+  <span class="pill" id="mode-pill">mode: plan</span>
+  <span class="spacer"></span>
+  <span class="pill" id="audit-pill">audit: …</span>
+  <button class="danger" id="kill" style="width:auto">Stop everything</button>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>request</h2>
+      <textarea id="task" placeholder="What should OS_V1 do?"></textarea>
+      <div class="modes">
+        <button id="mode-plan" class="active">Plan</button>
+        <button id="mode-build">Build</button>
+      </div>
+      <div class="row">
+        <input id="agent" placeholder="agent id (optional), e.g. A063" />
+      </div>
+      <div class="row">
+        <button class="primary" id="run">Send</button>
+        <button id="clear">Clear</button>
+      </div>
+      <p class="muted small" id="route-note">Routing happens in System One before the language model is used.</p>
+    </section>
+
+    <section>
+      <h2>agents</h2>
+      <input id="agent-search" placeholder="search 300 agents…" />
+      <div id="agent-list" class="events" style="max-height:220px"></div>
+    </section>
+
+    <section>
+      <h2>memory</h2>
+      <div id="memory" class="small muted">not loaded</div>
+    </section>
+  </div>
+
+  <div>
+    <section>
+      <h2>pipeline</h2>
+      <div class="layers" id="layers">
+        <div class="layer" data-layer="input">input</div>
+        <div class="layer" data-layer="world">world</div>
+        <div class="layer" data-layer="reasoning">reasoning</div>
+        <div class="layer" data-layer="decision">decision</div>
+        <div class="layer" data-layer="plan">plan</div>
+        <div class="layer" data-layer="action">action</div>
+        <div class="layer" data-layer="verification">verify</div>
+      </div>
+      <div class="events" id="events"></div>
+    </section>
+
+    <section>
+      <h2>answer</h2>
+      <div class="answer" id="answer">—</div>
+    </section>
+
+    <section>
+      <h2>plan</h2>
+      <div id="plan" class="small muted">no plan yet</div>
+    </section>
+  </div>
+
+  <div>
+    <section>
+      <h2>verification</h2>
+      <div id="verification" class="small muted">nothing verified yet</div>
+    </section>
+
+    <section>
+      <h2>metrics</h2>
+      <div id="metrics" class="small muted">no measurement yet</div>
+    </section>
+
+    <section>
+      <h2>permissions</h2>
+      <div id="permissions" class="small muted">not loaded</div>
+    </section>
+
+    <section>
+      <h2>action log</h2>
+      <div id="actions" class="small muted">no actions yet</div>
+    </section>
+
+    <section>
+      <h2>approvals</h2>
+      <div id="approvals" class="small muted">none pending</div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let mode = "plan";
+
+function esc(value) {
+  const div = document.createElement("div");
+  div.textContent = value == null ? "" : String(value);
+  return div.innerHTML;
+}
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  if (!response.ok) { throw new Error(await response.text()); }
+  return response.json();
+}
+
+function setMode(next) {
+  mode = next;
+  $("mode-plan").classList.toggle("active", mode === "plan");
+  $("mode-build").classList.toggle("active", mode === "build");
+  $("mode-pill").textContent = "mode: " + mode;
+}
+
+$("mode-plan").onclick = () => setMode("plan");
+$("mode-build").onclick = () => setMode("build");
+$("clear").onclick = () => { $("answer").textContent = "—"; $("events").innerHTML = ""; $("plan").textContent = "no plan yet"; };
+
+$("kill").onclick = async () => {
+  await api("/killswitch/engage", { method: "POST" });
+  await refresh();
+};
+
+$("run").onclick = async () => {
+  const task = $("task").value.trim();
+  if (task.length < 2) { $("answer").textContent = "Write the request first (at least two characters)."; return; }
+  $("answer").textContent = "working…";
+  $("events").innerHTML = "";
+  document.querySelectorAll(".layer").forEach((node) => node.className = "layer");
+  try {
+    const body = JSON.stringify({ task: task, agent_id: $("agent").value.trim() });
+    const result = await api(mode === "plan" ? "/plan" : "/build", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: body,
+    });
+    renderResult(result);
+  } catch (error) {
+    $("answer").textContent = "the request failed: " + error.message;
+  }
+  await refresh();
+};
+
+function renderResult(result) {
+  $("answer").textContent = result.answer || "(no answer)";
+  if (result.plan) {
+    $("plan").innerHTML = (result.plan.steps || []).map((step) =>
+      '<div class="step"><span class="tool">' + esc(step.tool) + '</span><span>' + esc(step.action) +
+      (step.target ? ' <span class="muted">' + esc(step.target) + '</span>' : '') +
+      (step.requires_approval ? ' <span class="pill">approval</span>' : '') + '</span></div>'
+    ).join("");
+  }
+  if (result.verification) {
+    const v = result.verification;
+    $("verification").innerHTML =
+      '<div class="check ' + (v.passed ? "pass" : "fail") + '"><span class="mark">' + (v.passed ? "✓" : "✗") +
+      '</span><span>' + (v.passed ? "passed" : "failed") + ' — uncertainty ' + v.uncertainty + '</span></div>' +
+      (v.checks || []).map((check) =>
+        '<div class="check ' + (check.passed ? "pass" : "fail") + '"><span class="mark">' + (check.passed ? "✓" : "✗") +
+        '</span><span><strong>' + esc(check.name) + '</strong> — ' + esc(check.detail) + '</span></div>'
+      ).join("");
+  }
+  if (result.metrics && result.metrics.metrics) {
+    $("metrics").innerHTML = result.metrics.metrics.map((metric) =>
+      '<div class="metric"><span>' + esc(metric.name) + '<div class="muted small">' + esc(metric.detail) + '</div></span>' +
+      '<span class="value">' + (metric.value === null ? "—" : metric.value) + ' ' + esc(metric.unit) + '</span></div>'
+    ).join("");
+  }
+  if (result.actions) {
+    $("actions").innerHTML = "<table><tr><th>action</th><th>outcome</th></tr>" + result.actions.map((action) =>
+      '<tr><td>' + esc(action.action) + '</td><td>' + esc(action.outcome) + '</td></tr>'
+    ).join("") + "</table>";
+  }
+  if (result.metrics && result.metrics.routing) {
+    $("route-note").textContent = "routed by System One to " + result.metrics.routing.chosen +
+      " (domain " + result.metrics.routing.som_domain + ", specialization " + result.metrics.routing.som_specialization + ")";
+  }
+}
+
+const LAYER_MAP = {
+  "input.received": "input", "input.ready": "input", "input.rejected": "input",
+  "world.snapshot": "world", "world.predicted": "world", "world.compared": "world",
+  "reasoning.hypotheses": "reasoning", "reasoning.tested": "reasoning", "reasoning.settled": "reasoning",
+  "decision.decide": "decision", "decision.ask": "decision", "decision.abstain": "decision",
+  "plan.ready": "plan", "plan.delivered": "plan",
+  "action.start": "action", "action.done": "action", "action.blocked": "action",
+  "action.approval_required": "action", "action.rolled_back": "action", "action.halted": "action",
+  "verification.done": "verification", "verification.agent_rules": "verification",
+};
+
+function onEvent(event) {
+  const layer = LAYER_MAP[event.event];
+  if (layer) {
+    const node = document.querySelector('.layer[data-layer="' + layer + '"]');
+    if (node) { node.className = "layer active flash"; }
+  }
+  const row = document.createElement("div");
+  row.className = "event" + (event.outcome === "failed" || event.event === "action.blocked" ? " fail" : "");
+  const detail = Object.keys(event).filter((key) => !["event", "request_id", "at"].includes(key))
+    .map((key) => key + "=" + JSON.stringify(event[key])).join(" ");
+  row.innerHTML = '<span class="name">' + esc(event.event) + '</span><span class="detail">' + esc(detail) + "</span>";
+  $("events").appendChild(row);
+  $("events").scrollTop = $("events").scrollHeight;
+  if (event.event === "verification.done" || event.event === "action.done") {
+    setTimeout(() => {
+      const node = document.querySelector('.layer[data-layer="' + layer + '"]');
+      if (node) { node.className = "layer done"; }
+    }, 350);
+  }
+}
+
+function connect() {
+  const source = new EventSource("/events");
+  source.onmessage = (message) => { try { onEvent(JSON.parse(message.data)); } catch (error) {} };
+  source.onerror = () => { $("engine").textContent = "event stream: reconnecting"; };
+}
+
+async function refresh() {
+  try {
+    const status = await api("/status");
+    $("engine").textContent = "engine: " + (status.engine.healthy ? "up" : "down") + " · " + status.engine.model;
+    $("engine").className = "pill " + (status.engine.healthy ? "on" : "off");
+    $("audit-pill").textContent = "audit: " + (status.audit.valid ? "chain ok" : "chain broken");
+    $("audit-pill").className = "pill " + (status.audit.valid ? "on" : "off");
+    $("permissions").innerHTML = (status.permissions || []).map((grant) =>
+      '<div class="metric"><span>' + esc(grant.scope) + '</span><span class="value small">' + esc(grant.target) + '</span></div>'
+    ).join("") || '<span class="muted">no grants</span>';
+    const memory = await api("/memory?limit=6");
+    $("memory").innerHTML = (memory.entries || []).map((entry) =>
+      '<div class="metric"><span>[' + esc(entry.kind) + '] ' + esc(entry.title || entry.content.slice(0, 40)) +
+      '</span><span class="value small">' + esc(entry.confidence.toFixed(2)) + '</span></div>'
+    ).join("") || '<span class="muted">nothing remembered yet</span>';
+    const approvals = await api("/approvals");
+    $("approvals").innerHTML = (approvals.pending || []).map((request) =>
+      '<div class="metric"><span>' + esc(request.action) + ' ' + esc(request.target) +
+      '</span><span class="value small"><button data-approve="' + esc(request.id) + '">approve</button></span></div>'
+    ).join("") || '<span class="muted">none pending</span>';
+    document.querySelectorAll("[data-approve]").forEach((button) => {
+      button.onclick = async () => {
+        await api("/approvals/" + button.dataset.approve + "/decide", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ approve: true, by: "console" }),
+        });
+        refresh();
+      };
+    });
+  } catch (error) { /* the API may still be starting */ }
+}
+
+async function loadAgents() {
+  const term = $("agent-search").value.trim().toLowerCase();
+  const data = await api("/agents?limit=300");
+  const agents = term
+    ? data.agents.filter((agent) => (agent.title + " " + agent.domain + " " + agent.specialization).toLowerCase().includes(term))
+    : data.agents;
+  $("agent-list").innerHTML = agents.slice(0, 60).map((agent) =>
+    '<div class="event"><span class="name">' + esc(agent.id) + '</span><span class="detail">' + esc(agent.title) +
+    ' <span class="muted">' + esc(agent.capabilities.join(", ")) + '</span></span></div>'
+  ).join("") + (term ? "" : '<div class="muted small">showing 60 of ' + data.total + ' agents — use the search box</div>');
+  document.querySelectorAll("#agent-list .event").forEach((row) => {
+    row.onclick = () => { $("agent").value = row.querySelector(".name").textContent.trim(); };
+  });
+}
+
+$("agent-search").oninput = loadAgents;
+setMode("plan");
+connect();
+refresh();
+setInterval(refresh, 5000);
+loadAgents();
+</script>
+</body>
+</html>

@@ -1,30 +1,79 @@
-# PRD — OSS Work Universal AI Agent
+# PRD — OSS Work / OS_V1
 
-## 1. نظرة عامة
-وكيل ذكاء اصطناعي مفتوح المصدر (Apache-2.0): محرك خيال Ultra IQ يعمل محليا، توجيه محلي، 8 وكلاء متخصصين، واجهات CLI وDesktop API محلي، ونظام OS محلي مستقل (oss-os). لا مفاتيح، لا سحابة.
+**المصدر الوحيد للحقيقة:** كل نقطة نهاية مذكورة هنا مستخرجة من `osv1/interface/api.py`.
+لا يوجد في هذه الوثيقة أي نقطة وهمية.
 
-## 2. المستخدمون
-- مستخدم نهائي (CLI/Web/OS)
-- مطوّر/مشغّل (CLI، API محلي، مهارات، تحديثات)
+**المنتج:** وكيل ذكاء اصطناعي محلي موحّد يخطّط ويقرر ويتحقق وينفّذ على جهاز المستخدم.
+**الاستقلالية:** بلا مزوّد، بلا مفاتيح، وبلا إنترنت في المسار الأساسي.
+**الوضع الافتراضي:** `Plan` (لا تنفيذ) — التنفيذ يتطلب `Build`.
 
-## 3. الميزات الأساسية (قابلة للاختبار)
-1. إرسال مهمة عبر API المحلي (`POST /task` بجسم `{"task": "...", "user_id": "..."}` → `status: completed|failed|busy`)
-2. فحص صحة وحالة الوكيل (`GET /health`, `GET /status` → version/mode/simulation_only/uptime/total_tasks/active_tasks/users)
-3. سرد النماذج المتاحة (`GET /models?limit=&offset=` → models/total/limit/offset)
-4. أوامر CLI: `run|chat|status|models|imagine|skill|update|desktop|data-dir` (Typer `oss-work`) + أوامر النظام `oss-os boot|status|run|tasks|submit|jobs|drain|skill-new|serve`
-5. تشغيل مهمة CLI (`oss-work chat "مهمة" --user local`) وتفاعلي (`oss-work desktop`)
-6. محرك الخيال (`oss-work imagine "مهمة" --threads 50 --depth 20` → solution/confidence/invented/threads_explored/simulation_branches)
-7. عرض مهارة (`oss-work skill` → self-built local skills; new ones via `oss-os skill-new <name> <purpose>`)
-8. فحص/تطبيق تحديث (`oss-work update --check/--apply`)
-9. حدّ معدل API (`OSS_RATE_LIMIT` default 60/60s → 429 عند التجاوز) وتحقق طول المهمة (2–10000 حرف → 400)
+---
 
-## 4. API endpoints الحقيقية (من الكود فقط)
-- `GET /health`, `GET /status`, `POST /task`, `GET /models`, `GET /` (من `interfaces/api/server.py`)
-- التشغيل: `uvicorn interfaces.api.server:app --host 127.0.0.1 --port 8080` أو `python -m interfaces.api.server` أو `oss-work run|desktop`
+## 1. تشغيل المنتج
 
-## 5. بيانات الدخول/الإعداد للاختبار
-- `python -m venv .venv && pip install -e ".[dev]"`؛ الإعداد عبر `.env` (`OSS_WORK_SIMULATION_ONLY=1` افتراضيا، `OSS_RATE_LIMIT`)؛ المحرك المحلي عبر `OSS_LOCAL_URL` (llama-server، بلا مفاتيح)
-- الاختبارات: `python -m pytest tests/ -v`؛ لا مصادقة على API المحلي — يعمل localhost بدون مفاتيح
+```bash
+pip install -e ".[dev]"
+python -m pytest tests/ -q          # الاختبارات تعمل بلا إنترنت وبلا محرك
+python -m osv1.interface.cli status
+python -m osv1.interface.api        # الواجهة الحية على http://127.0.0.1:8080
+```
 
-## 6. خارج النطاق (mocked/simulated)
-- النظام محلي فقط (OS v1): لا طلبات خارجية، لا مفاتيح، لا تعديل ملفات خارج الجذر، بوابات موافقة؛ تكاملات التكامل المحلية فقط (webhook/rest_api عبر loopback + سجل محلي).
+المحرك المحلي (اختياري، يضيف قدرات لغوية حقيقية):
+`C:\tools\llama\start-engine.cmd` ثم `OSS_LOCAL_URL=http://127.0.0.1:11400`.
+
+## 2. نقاط النهاية (Local API)
+
+| الطريقة | المسار | الوظيفة | رمز الحالة |
+|---|---|---|---|
+| GET | `/` | لوحة التحكم الحية (HTML + SSE) | 200 |
+| GET | `/health` | `{status, product, model}` | 200 |
+| GET | `/status` | حالة النظام الحقيقية: المحرك، الأدوات، الأذونات،Memory، Audit | 200 |
+| POST | `/plan` | `{task, agent_id}` → خطة **بدون** تنفيذ | 200 / 422 |
+| POST | `/build` | `{task, agent_id}` → تنفيذ + تحقق + سجل | 200 / 422 |
+| GET | `/agents?limit&offset&domain&specialization` | قائمة الوكلاء (300) مع ترقيم | 200 |
+| GET | `/agents/{agent_id}` | وكيل واحد | 200 / 404 |
+| GET | `/catalog` | أعداد حقيقية: 30 مجال × 10 تخصصات = 300 | 200 |
+| GET | `/events` | تدفّق SSE للأحداث الحقيقية أثناء العمل | 200 |
+| GET | `/memory?kind&limit` | الذاكرة (4 أنواع) | 200 |
+| POST | `/memory/export` | تصدير الذاكرة (تحكّم المستخدم) | 200 |
+| DELETE | `/memory/{entry_id}` | حذف عنصر ذاكرة | 200 / 404 |
+| GET | `/audit?limit` | سجل الأفعال (سلسلة تجزئة) | 200 |
+| GET | `/audit/verify` | التحقق من سلامة السجل | 200 |
+| GET | `/permissions` | الأذونات الممنوحة | 200 |
+| POST | `/permissions/grant` | `{scope, target, readonly}` | 200 |
+| POST | `/permissions/revoke` | `{scope, target}` | 200 |
+| GET | `/approvals` | الموافقات المعلّقة | 200 |
+| POST | `/approvals/{approval_id}/decide` | `{approve, by}` | 200 / 404 |
+| POST | `/killswitch/engage` | إيقاف فوري لكل النشاط | 200 |
+| POST | `/killswitch/release` | استئناف | 200 |
+| GET | `/metrics` | المقاييس الخمسة + حالة System One | 200 |
+
+**قواعد التحقق:** `task` بين حرفين و10.000 حرف · `agent_id` اختياري · `limit` بين 1 و500 · `scope` من: `files`, `network`, `programs`, `irreversible`.
+
+## 3. واجهة سطر الأوامر
+
+`oss-v1 <command>`:
+
+`plan` · `build` · `agents` · `agent` · `status` · `memory` · `audit` · `grant` · `revoke` · `approvals` · `kill` · `metrics` · `practice` · `weekly` · `serve` · `version`
+
+## 4. الوكلاء الـ300
+
+- 30 مجالاً (`osv1/agents/domains.py`) × 10 تخصصات (`osv1/agents/specializations.py`) = **300 وكيل**.
+- لكل وكيل: أدوات مسموحة، مستوى خطورة، قواعد تحقق، قالب خطة، وموجّه لغوي.
+- التوجيه: System One أولاً (تصنيف على 30 خياراً)، ثم احتياطي تعيين الكلمات المفتاحية.
+
+## 5. خارج النطاق (بالصراحة)
+
+- لا مصادقة على API المحلي (يربط بـ loopback فقط) — تُضاف مع النشر على الشبكة.
+- لا تحميل من الشبكة ولا استدعاء مزوّد خارجي في المسار الأساسي.
+- لا أوزان نموذج مضمّنة: المحرك المحلي يقدّمها.
+- تدريب LoRA حقيقي غير مضمّن: الأثر الحالي هو ملف تفضيلات مشفّر على الجهاز.
+
+## 6. معايير القبول
+
+1. `pytest` أخضر بلا إنترنت وبلا مفاتيح.
+2. `Plan` لا ينفّذ شيئاً؛ `Build` ينفّذ ما وافق عليه المستخدم فقط.
+3. كل فعل غير قابل للتراجع يطلب موافقة بشرية صريحة.
+4. مفتاح الإيقاف يوقف كل شيء فوراً.
+5. سلسلة سجل التدقيق قابلة للتحقق، والأسرار لا تظهر فيه.
+6. المقاييس تُبلّغ مع عدد العينات؛ ما بلا عينات لا يُبلّغ كنتيجة.

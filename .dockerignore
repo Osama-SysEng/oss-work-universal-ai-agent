@@ -20,6 +20,9 @@ build/
 *.log
 logs/
 data/
+data-osv1/
+workspace/
+skills-osv1/
 *.sqlite3
 *.db
 .vscode/

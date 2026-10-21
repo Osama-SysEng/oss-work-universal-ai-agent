@@ -1,295 +1,291 @@
-# OSS Work — Open-Source Universal AI Agent
+# OSS Work / OS_V1
 
-> **The world's first open-source AI agent with genuine imagination.**
+> A local, independent AI agent that plans, decides, verifies, and then acts — on your own machine, with no provider, no API key, and no internet in the core path.
 
 <div align="center">
 
-![NASA Space Apps Challenge 2025 Local Winner](https://img.shields.io/badge/NASA_Space_Apps_Challenge_2025-Local_Winner-4B27A0?style=for-the-badge&logo=nasa&logoColor=white)
-![AI Hackathon 2025 1st Place](https://img.shields.io/badge/AI_Hackathon_2025-1st_Place_(260+_projects)-E94C3A?style=for-the-badge&logo=openai&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11+-100?style=for-the-badge&logo=python&logoColor=white)
 ![License](https://img.shields.io/badge/License-Apache--2.0-blue?style=for-the-badge&logo=apache&logoColor=white)
+![Offline](https://img.shields.io/badge/runtime-offline%20first-3fb950?style=for-the-badge)
+![Agents](https://img.shields.io/badge/agents-300-4f9dff?style=for-the-badge)
 
 </div>
 
----
-
-**Built by [Osama Mohamed Fathy](https://github.com/Osama-SysEng)** — IT Systems Engineer & Intelligent Automation Architect, Cairo Egypt. BSc Software Engineering (1st in class, Ain Shams University 2026). MSc Robotics & AI Engineering (ITI, in progress).
+**Built by [Osama Mohamed Fathy](https://github.com/Osama-SysEng)** — IT Systems Engineer & Intelligent Automation Architect, Cairo, Egypt. BSc Software Engineering (Ain Shams University), MSc Robotics & AI Engineering (ITI, in progress).
 
 ---
 
-## What Is OSS Work?
+## What OS_V1 is
 
-OSS Work is a **zero-setup, zero-cost autonomous AI agent** that runs fully on your machine: a local inference engine (no API keys), 300 task agents over 30 archetypes, an office suite, a read-only web reader, loopback app hosting, and background work — reasoned through the **Ultra IQ Imagination Engine**.
+One model, presented to you as a single thing, with two modes:
 
-A local user runs a task and OSS Work handles everything on this machine — reading, coding, file management, office documents, security scanning, and more. No paid API keys required. No complex setup.
+- **Plan** — analyses, predicts, and proposes a plan. It executes nothing. You approve, change, or reject it.
+- **Build** — executes the approved plan, verifies every step, and delivers the result with its log.
 
-### The Five Pillars
+The central idea is to replace *a language model that writes a convincing answer* with *a system that thinks, predicts, decides, verifies, and then acts*. Every important output passes an independent verification step before it reaches you.
 
-| Pillar | What it means |
+This release is built from the OS_V1 specification. The old codebase was replaced, not patched — see [RELEASE_NOTES.md](RELEASE_NOTES.md).
+
+## The five pillars
+
+| Pillar | What it means here |
 |---|---|
-| **Ultra IQ Imagination Engine** | A parallel reasoning engine — not an LLM wrapper, not retrieval — that explores many solution threads, synthesizes patterns across domains, simulates outcomes before any action, and records genuinely novel solutions. |
-| **Local Engine, Zero Cost** | All reasoning runs on the independent local engine (llama-server + local GGUF model) with optional user-installed Ollama — no API keys, no cloud calls, no billing. |
-| **Full Device Stack** | Browser automation (Playwright), root-confined file management, office suite, read-only web reader, loopback hosting, CLI, and a desktop app (Tauri). |
-| **Continuous Learning** | ML pattern detection over session transcripts, invention trigger for genuinely novel solutions, and behavioral profiling that improves routing over time. |
-| **Open Source** | Apache-2.0 licensed. 78 Python modules, 7 specialist agents + orchestrator + 300 OS task agents, bilingual docs (Arabic + English), CI/CD pipeline, and a local SQLite state store (Postgres/Timescale optional, never required). |
+| **Two systems, one model** | System One answers fast typed questions (routing, verification, risk) with calibrated probabilities; System Two (the local llama.cpp server) plans and generates. You never pick a model. |
+| **Independent verification** | The verifier re-derives the facts from the artifacts — the files written, the rows counted, the tools run — and never asks the reasoner whether it did well. |
+| **300 specialized agents** | 30 domains × 10 specializations. Each agent has its own tools, risk level, verification rules, and plan template. |
+| **Its own tools** | A spreadsheet engine that writes real `.xlsx` files, a dashboard builder, AST code analysis, a no-network sandbox, a read-only reader, and an app-synthesis engine that builds a tool after understanding a file format. |
+| **A safety layer that cannot be edited by the system** | Permission scopes, human approval for irreversible actions, a tamper-evident audit log, an instant kill switch, prompt-injection defence, and an encrypted secret store. |
 
----
-
-## Quick Start
+## Quick start
 
 ```bash
-# Clone
 git clone https://github.com/Osama-SysEng/oss-work-universal-ai-agent.git
 cd oss-work-universal-ai-agent
 
-# Python 3.11+ required. No mandatory runtime deps for core.
 python -m venv .venv
-. .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-# Optional: install full deps (Playwright, httpx for local integrations)
+. .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 
-# Run the imagination engine (simulation mode — no API keys needed)
-python -c "
-from core.imagination.engine import UltraIQE
-engine = UltraIQE()
-result = engine.imagine('Design a scalable notification system for 10M users')
-print(result.solution)
-"
-
-# Run tests
-python -m pytest tests/ -v
-
-# Start the OS (local only, no keys needed)
-python -m ossys.boot boot
-
-# Start CLI
-python -m interfaces.cli.main "review this code for security issues"
+python -m pytest tests/ -q       # the whole suite runs offline, with no keys
+python -m osv1.interface.cli status
+python -m osv1.interface.api     # the live console on http://127.0.0.1:8080
 ```
 
----
+The language model is optional. Without it the system still plans, verifies, and works with the tools; with it the answers get better.
+
+```bash
+# Windows: start the local engine first
+C:\tools\llama\start-engine.cmd  # llama-server on 127.0.0.1:11400
+```
+
+```bash
+# then plan and build
+python -m osv1.interface.cli plan "review core/policy.py for security issues"
+python -m osv1.interface.cli build "review core/policy.py for security issues"
+```
+
+## What the numbers in this repository are
+
+Every number below was counted from the code, and `tests/test_release_assets.py`
+fails the build if the README drifts away from the code.
+
+| Claim | Value | How it is counted |
+|---|---|---|
+| Specialized agents | **300** | 30 domains × 10 specializations, asserted in the registry |
+| Python modules | **54** | `osv1/**/*.py` |
+| Lines of implementation | **~9,900** | the same modules |
+| Tools the agent layer can run | **19** | the tool registry at runtime |
+| Local API endpoints | **22** | the `@app` decorators in `osv1/interface/api.py` |
+| Tests | **141** | `python -m pytest tests/ -q` — offline, no keys, no engine |
+
+Nothing here is a benchmark claim. The five metrics of the specification are
+implemented and reported per run, but a held-out evaluation set does not exist
+yet — that is listed in [todo.md](todo.md), not implied to be done.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   USER INTERFACES                    │
-│  Web Dashboard │ CLI │ Desktop App    │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│              ULTRA IQ ORCHESTRATOR                   │
-│   Imagination Engine │ Task Decomposition │ Memory   │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│                  AGENT POOL                          │
-│  Browser │ Code │ File │ Security │ Integration      │
-│  Learning │ Memory │ Update │ Model Router           │
-└──────────────────────┬──────────────────────────────┘
-                       │
-┌──────────────────────▼──────────────────────────────┐
-│               LOCAL INTEGRATIONS                   │
-│  Local engine │ Office suite │ Reader │ Hosting    │
-│  GitHub │ Microsoft │ Any API                        │
-└─────────────────────────────────────────────────────┘
+user request
+  → 8.1 Multimodal Input        every input carries a source and a confidence
+  → 8.2 World Model and Memory  every action is predicted before it runs
+  → 8.3 Reasoning Engine        hypotheses are tested with tools
+  → 8.4 Decision Engine         options are scored; abstain or ask when thin
+  → 8.5 Verifier                independent checks over the artifacts
+  → 8.6 Adaptive Action Engine  run the plan under the safety layer
+  → delivered result + log
 ```
 
----
+Full detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) ·
+العربية: [docs/AR/دليل-المشروع.md](docs/AR/دليل-المشروع.md)
 
-## The Ultra IQ Imagination Engine
+### System One and System Two
 
-This is the core differentiator. OSS Work's imagination engine is a **genuine parallel reasoning system**, not an LLM call wrapper.
+System One turns a state plus a typed question into a structured, calibrated
+decision in one pass: a label with probabilities, a level on an ordinal scale,
+or a calibrated yes/no, always with a rationale trace. It abstains when it is
+not confident, and the request then asks you instead of guessing.
 
-### What it does
+The default backend is a transparent rule scorer — fast, offline, inspectable,
+and labelled as a heuristic wherever it is used. A Laya typed-decisions
+checkpoint is supported through an adapter (`OSS_V1_LAYA_MODEL`); no weights
+are bundled, and the system says so when none is served.
 
-- **Many concurrent reasoning threads** — explores every angle simultaneously (bounded by `max_threads`)
-- **39 reasoning domains** — General, Code, Creative, Research, Arabic, Business, Ethics, Security, Systems, Health, Education, Future, Legal, Finance, Data, Marketing, Philosophy, Science, History, and more
-- **Future simulation** — before any action, simulates near/medium/long-term horizons with probability estimates and risk registers
-- **Genuine invention** — when novelty exceeds threshold, records solutions not seen before in local history
-- **Cross-domain synthesis** — builds bridges between domains to find connections no single domain would see
+System Two is the local engine. It is used for planning and generation only.
+Every answer records whether a model or the rules produced it, so a template
+is never passed off as a model response.
 
-### A tiny example
+### The 300 agents
 
-```python
-from core.imagination.engine import UltraIQE
-
-engine = UltraIQE()
-
-result = engine.imagine(
-    "How do I build a real-time collaborative editor like Google Docs?",
-)
-print(result.solution)  # Full technical proposal
-print(result.confidence)  # 0.0–1.0 calibrated score
-print(result.invented)  # True if genuinely new
-print(result.cross_domain_bridges)  # E.g. ["OperationalTransform × CRDTs"]
-print(result.simulation_branches)  # Future scenario analysis
+```bash
+oss-v1 agents --domain security-engineering
+oss-v1 agent A153
+oss-v1 plan "optimize the slow query in api.py" --agent A065
 ```
 
-The engine runs entirely offline. No API calls. No network. Just parallel reasoning.
+Each agent is a capability profile, not a persona: what it may use, what it
+must produce, and what has to be true before its answer is delivered.
+[docs/AGENTS.md](docs/AGENTS.md) has the full table.
 
----
+## The safety layer
 
-## Local Model Routing
+| Control | Behaviour |
+|---|---|
+| Permission scopes | files, network, programs, and irreversible actions are granted explicitly and can be revoked |
+| Human approval | deleting, sending, paying, publishing, and system changes wait for your decision |
+| Audit log | every action is chained by hash, so an edited or removed line is detected |
+| Kill switch | one file stops every action, the scheduler, and the background work |
+| Injection defence | content from files, pages, and tools is data, never an instruction |
+| Secrets | encrypted by the operating system (DPAPI); never written in plain text |
+| Immutable core | self-improvement may not touch the safety layer, the permissions, the audit log, the kill switch, or the verifier's tests |
 
-OSS Work routes every task locally **at zero API cost**:
+Known limits are written down in [SECURITY.md](SECURITY.md): the sandbox
+blocks the network for Python children but is not an operating-system jail,
+and the local API has no authentication because it binds to the loopback
+interface only.
 
-- **Independent engine** — llama-server (llama.cpp) with a local quantized model on loopback. No API key needed, nothing leaves the machine.
-- **Optional Ollama** — if the user installed Ollama separately, it serves as a second local fallback.
+## Memory
 
-The `ModelRouter` classifies tasks by content (code, Arabic, creative, fast, etc.) and routes to the local engine with automatic failover. `OSS_OS_STRICT=true` (default) keeps automatic routing local-only.
+Four types that never blur into each other: **facts** (verified), **experiences**
+(what was tried and what happened), **skills** (reusable procedures with their
+conditions and tests), and **assumptions** (tagged as assumptions, revocable,
+never treated as facts). Everything is local, versioned, and under your
+control: read it, correct it, delete it, export it, roll it back.
 
----
+## Self-evolution, practice, personalization
 
-## Multi-Agent System
+- **Self-evolution** — log, learn, ask, test against a frozen suite, promote.
+  A candidate that regresses anything is rejected; every version is kept with
+  a one-step rollback.
+- **Practice sessions** — build the same project twice, once from the README
+  only and once from the analysis of its artifact, then compare the results.
+  Cloned code runs in the sandbox with no network, the original's code is never
+  copied, and weight training only uses permissive licences.
+- **Weekly personalization** — studies how you work, scores itself against the
+  choices you actually made, and writes an encrypted artifact on your machine.
+  The artifact is a preference profile, **not** neural adapter weights; a real
+  adapter needs a training stack this repository does not bundle.
 
-OSS Work runs 7 specialist agents plus an orchestrator (keyword-based task decomposition):
+## The interface
 
-| Agent | Purpose | Status |
+`python -m osv1.interface.api` serves the live console on `127.0.0.1:8080`.
+The animation is bound to the real event stream: the layer lights up because
+something happened, and the stop button stops the run. The plan, the
+confidence, the verification checks, the permissions in use, and the action
+log are always on screen.
+
+The desktop shell under `desktop/` is a thin Tauri window that loads that
+console. It contains no model and fakes no result; building it needs Rust,
+which is not installed in this environment.
+
+## Independence
+
+| Layer | Rule | How it is kept |
 |---|---|---|
-| **Browser Agent** | Real Playwright automation for web tasks | ✅ Production |
-| **Code Agent** | Write, execute, and review Python code in sandbox | ✅ Production |
-| **File Agent** | Root-confined file listing, reading, writing | ✅ Production |
-| **Security Agent** | Static analysis, secrets detection, file sanitization | ✅ Production + ML patterns |
-| **Integration Agent** | Loopback webhooks/REST + local log (no cloud services) | ✅ Production |
-| **Learning Agent** | ML pattern detection + invention trigger + profiling | ✅ Production |
-| **Memory Agent** | SQLite recall + audit logging | ✅ Production |
-| **Update Agent** | Delta patch application + rollback | ✅ Production |
-| **Model Router** | Local-only routing (independent engine + optional Ollama) | ✅ Production |
+| Compute | runs offline | the core path never opens a socket |
+| Models | the local engine only | no provider client exists in the code |
+| Keys | none | there is no key in the code, the README, or the template |
+| Tools | its own | spreadsheet, dashboard, analysis, sandbox, reader, synthesis |
+| Memory | local | SQLite on your machine, with an optional encrypted archive |
+| Interface | its own | the local console and the command line |
 
----
+## Honest limits
 
-## Safety & Simulation Mode
+- The local model is a 3B quantized model. It is good at light tasks and
+  decisions; heavy work is split or queued.
+- The browser is a read-only reader: no JavaScript, no forms, no login, no
+  screenshots.
+- The sandbox blocks the network for Python children. Native code can get past
+  that; use a container for a real jail.
+- The personalization artifact is a preference profile, not a trained adapter.
+- The local API has no authentication. Keep it on the loopback interface.
+- There is no held-out benchmark set yet, so the metrics are per-run
+  observations rather than results to compare against other systems.
 
-OSS Work operates in **simulation-only mode by default**. This means:
+The full list of what is still open is in [todo.md](todo.md).
 
-- No real external requests are sent unless explicitly configured
-- No real credentials are used unless explicitly configured
-- No real file mutations happen outside the allowed root
-- Every action is logged to the audit trail
-- Approval gates block real execution until explicitly waived
+## Roadmap
 
-When you're ready for production use, configure real API keys and credentials in `.env` — the same codebase switches seamlessly to live mode.
+The specification's phases, with the acceptance criteria that close each one:
 
----
+| Phase | Deliverable | Acceptance |
+|---|---|---|
+| 0 Foundation | base model chosen, local runtime, contracts, evaluation harness | harness runs, contracts reviewed, licences cleared |
+| 1 Core | reasoning, verifier, decision, plus the SOM head | calibration and latency targets met on the SOM sets |
+| 2 Agent | dedicated user, file access, browser control, safety layer | red-team passes, kill switch and logs verified |
+| 3 Memory | four memory types, skill learning, calibration loop, weekly session | a skill learned in one session is reused in another |
+| 4 REA | embedded REA, generated tools, practice sessions | generated files open cleanly, practice metrics tracked |
+| 5 Interface | the app and the synchronized animation | the user can always see what, why, and how to stop |
+| 6 World model | world model and OS_V1 training | prediction accuracy and unified-model benchmarks met |
+| 7 Release | integration, full suite, package | every earlier acceptance criterion passes together |
 
-## Project Structure
+**This release covers the foundation and the core of phases 0 to 3, with the
+tool layer, the safety layer, and the interface in place.** The numbers in the
+table are targets; the work that remains is in `todo.md`.
+
+## Repository layout
 
 ```
-oss-work-universal-ai-agent/
-├── core/
-│   ├── imagination/          # Ultra IQ Imagination Engine
-│   │   ├── __init__.py
-│   │   ├── engine.py         # Main engine (39KB Ultra IQ)
-│   │   └── contracts.py      # Thread, Simulation, ImaginationResult
-│   ├── agents/               # 8 specialist agents
-│   │   ├── browser_agent.py
-│   │   ├── code_agent.py
-│   │   ├── file_agent.py
-│   │   ├── security_agent.py
-│   │   ├── integration_agent.py
-│   │   ├── learning_agent.py
-│   │   ├── memory_agent.py
-│   │   └── update_agent.py
-│   ├── services/
-│   │   ├── model_router.py   # local-only routing
-│   │   ├── local_engine.py   # llama-server client (no keys)
-│   │   └── updater.py
-│   ├── contracts.py          # TaskRequest, TaskResult, DecisionRecord
-│   ├── policy.py             # Safety policy system
-│   ├── audit.py              # Structured audit logging
-│   ├── knowledge.py          # Knowledge base
-│   ├── workflow.py           # Task decomposition
-│   ├── orchestrator.py       # Multi-agent orchestrator
-│   ├── agent_registry.py     # Agent registry
-│   └── advanced.py           # Security, evolution, telemetry
-├── ossys/                    # oss-work OS v1 (local only, no keys)
-│   ├── kernel.py             # boot + real dispatch + background
-│   ├── task_registry.py      # 300 task agents (data, not files)
-│   ├── archetypes.py         # 30 agent archetypes
-│   ├── scheduler.py          # persistent background jobs
-│   ├── skills.py             # self-built skills (yes/no)
-│   ├── office/               # documents / sheets / decks
-│   ├── browser.py            # read-only web reader
-│   ├── hosting.py            # loopback hosting (no Docker)
-│   └── boot.py               # oss-os CLI
-├── interfaces/
-│   ├── cli/
-│   │   └── main.py           # Typer CLI (local only)
-│   └── api/
-│       └── server.py         # Desktop Local API
-├── memory/
-│   ├── postgres.py           # PostgreSQL + TimescaleDB
-│   ├── qdrant.py             # Qdrant vector store
-│   └── redis.py              # Redis cache + rate limiting
-├── db/
-│   ├── schema.sql            # Full database schema
-│   └── migrations/
-│       └── 001_init.sql      # Initial migration
-├── desktop/
-│   └── src-tauri/            # Tauri desktop app (Rust)
-│       ├── src/main.rs
-│       ├── tauri.conf.json
-│       └── Cargo.toml
-├── web/                      # Next.js web dashboard
-├── tests/
-│   ├── test_imagination.py
-│   ├── test_model_router.py
-│   ├── test_ossys_kernel.py  # OS kernel + strict routing
-│   └── test_browser_agent.py
-├── docs/
-│   ├── en/
-│   │   ├── IMAGINATION_ENGINE.md
-│   │   └── ZERO_COST_MODELS.md
-│   └── AR/
-│       └── محرك-الخيال.md
-├── .github/workflows/
-│   └── release.yml           # CI/CD pipeline
-├── docker-compose.yml        # PostgreSQL + Redis + Celery
-├── pyproject.toml
-├── .env.example
-├── README.md
-└── RELEASE_NOTES.md
+osv1/
+├── config.py            device tiers, limits, paths, safety switches
+├── contracts.py         the typed objects that cross every boundary
+├── som.py               System One: typed decisions and abstention
+├── calibration.py       ECE, Brier, temperature scaling
+├── engine/              the local engine client and System Two
+├── layers/              the six layers of the specification
+├── agents/              30 domains, 10 specializations, 300 agents, the runner
+├── tools/               files, code, sandbox, spreadsheet, dashboard, reader, REA, synthesis
+├── memory/              facts, experiences, skills, assumptions, versioning
+├── learning/            self-evolution, practice, personalization, scheduler
+├── safety/              permissions, approvals, audit, kill switch, injection, secrets
+├── eval/                the five measurable metrics
+├── interface/           the local API, the command line, the live console
+└── sync.py              the optional encrypted archive
+docs/                    architecture, agents, and the Arabic guide
+tests/                   the suite, including the frozen promotion gate
+desktop/                 the Tauri shell
 ```
 
----
+## Documentation
 
-## Awards & Recognition
-
-- 🏆 **NASA Space Apps Challenge 2025 — Local Winner** (551 events worldwide)
-- 🥇 **AI Hackathon 2025 — 1st Place** (260+ projects, Creativa × TIEC)
-
----
+| Document | What it holds |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | the layers, the modules, the state on disk |
+| [docs/AGENTS.md](docs/AGENTS.md) | the 30 domains, the 10 specializations, routing |
+| [SECURITY.md](SECURITY.md) | what the safety layer enforces, and what it does not |
+| [todo.md](todo.md) | every deliberate limit and every open task |
+| [PRD.md](PRD.md) | the endpoints and the acceptance criteria (Arabic) |
+| [RELEASE_NOTES.md](RELEASE_NOTES.md) | what this release replaced, and why |
+| [docs/AR/دليل-المشروع.md](docs/AR/دليل-المشروع.md) | the Arabic guide |
 
 ## Contributing
 
-OSS Work is open source under the Apache-2.0 license. Contributions are welcome — especially:
-
-- Local OS services (office suite, reader, hosting, skills)
-- New model provider support in the router
-- Expanded imagination engine domains and strategies
-- Desktop app frontend in React
-- Translation of docs to more languages
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
-
----
+Contributions are welcome — especially the held-out evaluation set, a real
+operating-system sandbox, a typed-decision dataset for System One, and a
+second model backend to compare against. Every new capability needs a test
+and a stated limit.
 
 ## License
 
-Apache-2.0 — see [LICENSE](./LICENSE) for details.
+Apache-2.0 — see [LICENSE](LICENSE). Base model weights must be under
+Apache 2.0 or MIT; anything else needs a legal review first.
 
 ---
 
-## Contact
+<div dir="rtl">
 
-- **GitHub**: https://github.com/Osama-SysEng
-- **LinkedIn**: https://linkedin.com/in/osama-mohamed-57159a410
-- **Email**: ososama7979@gmail.com
+## بالعربية
 
-_Built with imagination by Osama Mohamed Fathy, Cairo Egypt._
+**OSS Work / OS_V1** وكيل ذكاء اصطناعي محلي موحّد: يخطّط، يقرر، يتحقق، ثم ينفّذ — على جهازك أنت، بلا مزوّد وبلا مفاتيح وبلا إنترنت في المسار الأساسي.
 
-## What's New (Oct 2026)
-- Live PostgreSQL (10 tables; TimescaleDB hypertables need a Timescale server)
-- ~110 tests collected, 0 errors
-- Interactive 3D showcase: open `web-3d/index.html` (Three.js, animated, mouse-reactive)
+- **وضعان:** `Plan` يقترح خطة ولا ينفّذ شيئاً، و`Build` ينفّذ الخطة المعتمدة ويتحقق من كل خطوة.
+- **نظامان:** System One للقرارات السريعة المنظّمة (التوجيه، التحقق، تقدير الخطورة) باحتمالات معايرة، وSystem Two (محرك llama.cpp المحلي) للتخطيط والتوليد. المستخدم يرى نموذجاً واحداً فقط.
+- **300 وكيل متخصص:** 30 مجالاً × 10 تخصصات، لكل وكيل أدواته ومستوى خطورته وقواعد تحققه وقالب خطته.
+- **طبقة أمان لا يعدّلها النظام:** أذونات صريحة، موافقة بشرية للأفعال غير القابلة للتراجع، سجل تدقيق مقاوم للتلاعب، مفتاح إيقاف فوري، دفاع ضد حقن التعليمات، وأسرار مشفّرة.
+- **ذاكرة بأربعة أنواع لا تختلط:** وقائع، خبرات، مهارات، افتراضات — محلية، مُصدَّرة بإصدارات، وتحت سيطرتك.
+- **تعلّم ذاتي ببوابة:** تسجيل ← تعلّم ← سؤال ← اختبار على مجموعة مجمّدة ← ترقية، مع تراجع بخطوة.
+
+الأرقام في هذا الملف مقيسة من الكود، واختبار `tests/test_release_assets.py` يُفشل البناء إذا تعارضت مع الواقع. الحدود الصريحة — نموذج 3B، متصفح للقراءة فقط، sandbox على مستوى Python لا النظام، بلا مصادقة على API المحلي — موثّقة في `todo.md` و`SECURITY.md`.
+
+**التشغيل:** `pip install -e ".[dev]"` ثم `python -m pytest tests/ -q` ثم `python -m osv1.interface.api` (اللوحة الحية على `127.0.0.1:8080`).
+
+</div>

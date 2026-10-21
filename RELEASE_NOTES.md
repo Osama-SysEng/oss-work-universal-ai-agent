@@ -1,25 +1,73 @@
-# OSS-Work 0.2.0-safe Release Notes
+# OSS Work / OS_V1 — Release Notes
 
-## Summary
+## 1.0.0 — 21 October 2026
 
-This release replaces the supplied alpha prototype with a smaller, reviewable safety foundation and adds a responsive operator console adapted from the two supplemental Next.js archives, plus a transport-agnostic telemetry layer and staging-ready PostgreSQL/TimescaleDB migration. It fixes the fatal abstract-method declaration, removes runtime dependency installation, confines filesystem operations, denies host code execution, converts external integrations and browser control to simulation-only, replaces unsafe self-updating with review-only artifact verification, adds typed decision contracts, and introduces focused regression tests.
+The first release built on the OS_V1 specification. The previous codebase was
+replaced, not patched: the old modules are removed, and what remains is one
+coherent system with a stated contract at every layer.
 
-## Verification evidence
+### What this release is
 
-The source tree now contains the hardened Python core, a reviewed web console, a bounded telemetry batcher, an idempotent local telemetry store, and a staging-ready TimescaleDB migration. Python compilation completed successfully, the expanded suite completed with **14 passed** tests, and the web console passed TypeScript validation and a production `next build`. The release-asset checks also verify the TimescaleDB migration controls, loopback-only staging binding, required file-based secrets, and the absence of live frontend network routes. The archive audit found no `.env` file, database, log, compiled cache, or hard-coded credential matching the release scan patterns after cleanup.
+A local, independent AI agent that runs on the user's machine. One model
+(OS_V1) with two modes:
 
-## Telemetry and database integration
+- **Plan** — analyses, predicts, and proposes a plan. It executes nothing.
+- **Build** — executes an approved plan, verifies every step, and delivers the
+  result with its log.
 
-The supplied TimescaleDB archive was reviewed as a database-extension reference rather than copied wholesale into the application. The release uses its relevant time-series patterns through `TelemetryEvent`, `TelemetryBatcher`, an idempotent SQLite reference store, and `db/timescale/001_telemetry.sql`. The migration includes tenant keys, row-level security, indexes, an hourly continuous aggregate, and a commented retention policy that must be selected with the aggregate refresh window. The `deploy/` profile adds a loopback-only staging compose setup with a required pinned image and file-based password secret. It does not create credentials, users, public network access, or a production high-availability topology.
+### The six layers (spec section 8)
 
-## Web console integration
+| Layer | Module | What it guarantees |
+|---|---|---|
+| Multimodal input | `osv1/layers/input_layer.py` | every input carries a source and a confidence; unreadable input is reported, never skipped |
+| World model and memory | `osv1/layers/world_model.py` | every action is predicted before it runs and compared with what happened |
+| Reasoning | `osv1/layers/reasoning.py` | hypotheses are tested with tools; a contradicted one is dropped |
+| Decision | `osv1/layers/decision.py` | options are scored; the engine abstains or asks when the evidence is thin |
+| Verifier | `osv1/layers/verifier.py` | independent checks over the artifacts, not over the reasoning |
+| Action | `osv1/layers/action.py` | every action has a permission, a log entry, and a rollback path |
 
-The second supplemental archive supplied the navigation shell, dashboard information hierarchy, and dark visual language. The first supplied the orchestration graph pattern. Those presentational ideas were rewritten into the `web/` workspace with a restrained slate-and-mint system, responsive behavior, reduced-motion support, semantic labels, and explicit state names. Live API routes from the supplemental archives were not merged because they would reintroduce host execution, arbitrary network access, or false seeded telemetry.
+### System One and System Two
 
-## Deliberately disabled
+- System One (`osv1/som.py`) answers typed questions — choice, score, yes/no —
+  with calibrated probabilities, a rationale trace, and an abstention
+  threshold. The default backend is a transparent rule scorer; a Laya
+  typed-decisions checkpoint is used when one is served locally.
+- System Two (`osv1/engine/llm.py`) is the local llama.cpp server. It is used
+  for planning and generation only, and every answer records whether a model
+  or the rules produced it.
 
-The release does not provide a bypass for proprietary model subscriptions, autonomous skill acquisition, live Meta/Telegram/Google/Microsoft/GitHub actions, login or form submission, full operating-system control, unrestricted code execution, hot updates, or a guarantee of immunity from compromise or arbitrary-scale load.
+### The 300 specialized agents
 
-## Hash
+30 domains times 10 specializations. Each agent has its own capabilities,
+risk level, verification rules, plan template, and prompt. They are listed
+by `oss-v1 agents`, by `/agents`, and by the live console.
 
-The final archive SHA-256 is recorded beside the archive in the delivery directory and should be checked after transfer.
+### The safety layer
+
+Permission scopes with explicit grants, human approval for irreversible
+actions, a hash-chained audit log, an instant kill switch, prompt-injection
+defence, and an encrypted secret store (DPAPI). The safety layer, the
+permissions, the audit log, the kill switch, and the verifier's tests are off
+limits to self-improvement work — the promotion gate refuses to touch them.
+
+### The tool layer
+
+Root-confined file tools, AST-based code analysis, a sandbox with no network
+and no inherited secrets, a built-in spreadsheet engine that writes real
+`.xlsx` files, a self-contained dashboard builder, a read-only reader, the
+REA analysis adapter, and App Synthesis — which understands a file format and
+builds the matching tool inside the system.
+
+### The interface
+
+A local API on the loopback interface, a command line, and a live console
+whose animation is bound to the real event stream. The desktop shell (Tauri)
+loads that console; it contains no model and fakes no result.
+
+### Removed from the previous release
+
+The old core package, the old agent suite, the keyword-scoring "imagination"
+engine and its unmeasurable claims, the static Next.js console with its fixed
+demo data, the 3D showcase page, the unused PostgreSQL, Redis, and Qdrant
+clients, the conflicting SQL schemas, and the review-only updater. The
+replacement is smaller, and everything left has a test behind it.

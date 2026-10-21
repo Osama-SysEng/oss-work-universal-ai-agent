@@ -73,10 +73,10 @@ fails the build if the README drifts away from the code.
 |---|---|---|
 | Specialized agents | **300** | 30 domains × 10 specializations, asserted in the registry |
 | Python modules | **58** | `osv1/**/*.py` |
-| Lines of implementation | **~11,400** | the same modules |
+| Lines of implementation | **~11,500** | the same modules |
 | Tools the agent layer can run | **20** | the tool registry at runtime |
 | Local API endpoints | **25** | the `@app` decorators in `osv1/interface/api.py` |
-| Tests | **168** | `python -m pytest tests/ -q` — offline, no keys, no engine |
+| Tests | **177** | `python -m pytest tests/ -q` — offline, no keys, no engine |
 
 Nothing here is a benchmark claim against another system. The five metrics of
 the specification are implemented and reported per run, and the evaluation
@@ -136,6 +136,11 @@ oss-v1 plan "optimize the slow query in api.py" --agent A065
 Each agent is a capability profile, not a persona: what it may use, what it
 must produce, and what has to be true before its answer is delivered.
 [docs/AGENTS.md](docs/AGENTS.md) has the full table.
+
+**Arabic requests work.** Every domain and specialization carries the Arabic
+words people actually use, written as short stems so the inflected forms
+match — `راجع` and `مراجعة` both reach the review agents, `ثغرة` and `ثغرات`
+both reach the security domain, and both spellings of a hamza are listed.
 
 ## The context window
 
@@ -302,11 +307,16 @@ desktop/                 the Tauri shell
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | the layers, the modules, the state on disk |
 | [docs/AGENTS.md](docs/AGENTS.md) | the 30 domains, the 10 specializations, routing |
+| [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | the trust boundaries, the abuse cases, the residual risks |
+| [docs/SUPPLY_CHAIN.md](docs/SUPPLY_CHAIN.md) | the dependency licences, the pinning, the provenance register |
+| [docs/SCALING.md](docs/SCALING.md) | the device tiers, the context window, and where local ends |
+| [docs/LOGGING.md](docs/LOGGING.md) | the two logs, the redaction, and the chain verifier |
 | [SECURITY.md](SECURITY.md) | what the safety layer enforces, and what it does not |
 | [todo.md](todo.md) | every deliberate limit and every open task |
 | [PRD.md](PRD.md) | the endpoints and the acceptance criteria (Arabic) |
 | [RELEASE_NOTES.md](RELEASE_NOTES.md) | what this release replaced, and why |
 | [docs/AR/دليل-المشروع.md](docs/AR/دليل-المشروع.md) | the Arabic guide |
+| [docs/AR/دليل-الأمان.md](docs/AR/دليل-الأمان.md) | the Arabic safety guide |
 
 ## Contributing
 

@@ -22,7 +22,17 @@ from pathlib import Path
 from osv1.contracts import ActionRecord, Check, Plan, Verification
 from osv1.layers.context import LayerContext
 
-WORD = re.compile(r"[a-z0-9_]+")
+WORD = re.compile(r"[a-z0-9_]+|[\u0600-\u06ff]+")
+ARABIC = re.compile(r"[\u0600-\u06ff]")
+
+
+def _script(text: str) -> str:
+    """The writing system of a text: arabic, latin, or none."""
+    if ARABIC.search(text):
+        return "arabic"
+    if re.search(r"[A-Za-z]", text):
+        return "latin"
+    return "none"
 
 
 @dataclass
@@ -89,7 +99,14 @@ class Verifier:
         )
 
     def check_answer(self, answer: str, goal: str) -> Check:
-        """The answer has to address the goal, not just exist."""
+        """The answer has to address the goal, not just exist.
+
+        The check compares the content words of the goal with the answer.
+        When the two are written in different scripts — an Arabic request
+        answered in English, for instance — the comparison cannot be made, so
+        the check reports that it could not be applied and adds uncertainty,
+        instead of failing an answer that may well be correct.
+        """
         if not answer.strip():
             return Check(name="answer", passed=False, detail="the answer is empty")
         goal_tokens = set(WORD.findall(goal.lower())) - {
@@ -104,9 +121,20 @@ class Verifier:
             "this",
             "that",
         }
+        answer_tokens = set(WORD.findall(answer.lower()))
+        if _script(goal) != _script(answer):
+            return Check(
+                name="answer",
+                passed=True,
+                detail=(
+                    f"the goal is in {_script(goal)} and the answer in {_script(answer)}, "
+                    "so the word-overlap check could not be applied"
+                ),
+                evidence=(),
+                weight=0.5,
+            )
         if not goal_tokens:
             return Check(name="answer", passed=True, detail="the goal has no content words to check")
-        answer_tokens = set(WORD.findall(answer.lower()))
         overlap = len(goal_tokens & answer_tokens) / len(goal_tokens)
         if overlap < 0.15:
             return Check(

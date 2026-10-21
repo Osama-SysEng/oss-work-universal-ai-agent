@@ -79,3 +79,22 @@ def test_uncertainty_is_reported_from_the_confidence_values() -> None:
     result = verifier.verify(answer="the report lists every row", goal="list every row", confidence_values=[0.8, 0.8])
     assert 0.0 <= result.uncertainty <= 1.0
     assert result.uncertainty_note
+
+
+def test_an_answer_in_another_script_does_not_fail_the_coverage_check() -> None:
+    """A check that cannot be applied must not be reported as a failure."""
+    verifier = Verifier(context=_context())
+    result = verifier.verify(
+        answer="the file was read and the findings are listed",
+        goal="راجع الملف بحثاً عن ثغرات أمنية",
+    )
+    answer_check = next(check for check in result.checks if check.name == "answer")
+    assert answer_check.passed is True
+    assert "could not be applied" in answer_check.detail
+    assert answer_check.weight < 1.0
+
+
+def test_the_coverage_check_still_fails_in_the_same_script() -> None:
+    verifier = Verifier(context=_context())
+    result = verifier.verify(answer="the weather is fine today", goal="summarize the payroll spreadsheet")
+    assert result.passed is False

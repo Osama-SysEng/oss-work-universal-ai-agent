@@ -83,3 +83,36 @@ def test_catalog_reports_real_counts() -> None:
     assert catalog["specializations"] == 10
     assert sum(catalog["by_domain"].values()) == 300
     assert sum(catalog["by_specialization"].values()) == 300
+
+
+def test_every_domain_and_specialization_carries_arabic_vocabulary() -> None:
+    """An Arabic request has to reach the right agent, not a random one."""
+    from osv1.agents.domains import DOMAINS as DOMAIN_LIST
+    from osv1.agents.specializations import SPECIALIZATIONS as SPEC_LIST
+
+    def has_arabic(words: tuple[str, ...]) -> bool:
+        return any(any("\u0600" <= char <= "\u06ff" for char in word) for word in words)
+
+    assert all(has_arabic(domain.keywords) for domain in DOMAIN_LIST)
+    assert all(has_arabic(specialization.keywords) for specialization in SPEC_LIST)
+
+
+def test_an_arabic_request_reaches_the_right_agent() -> None:
+    agent, _ = REGISTRY.route("راجع الكود بحثاً عن ثغرات أمنية")
+    assert agent is not None
+    assert agent.domain.key == "security-engineering"
+    assert agent.specialization.key == "review"
+
+
+def test_an_arabic_stem_matches_its_inflections() -> None:
+    """مراجعة، راجع — the same stem has to reach both, and the hamza needs its own entry."""
+    from osv1.agents.registry import _word_present
+
+    assert _word_present("راجع", "راج")
+    assert _word_present("مراجعة", "راج")
+    assert _word_present("ثغرة", "ثغر")
+    assert _word_present("ثغرات", "ثغر")
+    # The hamza is a different character, so both spellings are listed.
+    assert _word_present("أمن", "أمن")
+    assert _word_present("امن", "امن")
+    assert not _word_present("أمن", "امن")

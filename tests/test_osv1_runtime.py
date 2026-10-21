@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from osv1.agents.registry import REGISTRY
 from osv1.runtime import OSRuntime
 
 
@@ -99,3 +100,27 @@ def test_the_status_reports_the_real_state(runtime: OSRuntime) -> None:
     assert status["engine"]["healthy"] in (True, False)
     assert status["audit"]["valid"] is True
     assert status["permissions"]
+
+
+def test_a_step_that_does_not_fit_the_target_is_left_out(runtime: OSRuntime, tmp_path: Path) -> None:
+    """A code analyzer has nothing to say about a Markdown file."""
+    from osv1.agents.base import applicable
+
+    assert applicable("code.analyze", "a.py") is True
+    assert applicable("code.analyze", "README.md") is False
+    assert applicable("file.read", "README.md") is True
+
+    (tmp_path / "README.md").write_text("# hello", encoding="utf-8")
+    result = runtime.plan("راجع ملف README.md بحثاً عن ثغرات أمنية")
+    assert result.plan is not None
+    assert all(step.tool != "code.analyze" for step in result.plan.steps)
+
+
+def test_an_arabic_request_reaches_the_security_agent(runtime: OSRuntime) -> None:
+    result = runtime.plan("راجع الكود بحثاً عن ثغرات أمنية")
+    routing = result.metrics["routing"]
+    assert routing["chosen"]
+    agent = REGISTRY.get(routing["chosen"])
+    assert agent is not None
+    assert agent.domain.key == "security-engineering"
+    assert agent.specialization.key == "review"

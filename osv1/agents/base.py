@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from osv1.agents.registry import AgentSpec
@@ -25,6 +26,40 @@ PATH_PATTERN = re.compile(
     r"[\w./\\-]+\.(?:py|md|txt|json|ya?ml|toml|csv|tsv|html?|css|js|jsx|ts|tsx|sql|log|db|sqlite3?|xml|ini|cfg)"
 )
 URL_PATTERN = re.compile(r"https?://[^\s\"'<>]+")
+CODE_SUFFIXES = (
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".c",
+    ".h",
+    ".cpp",
+    ".cs",
+    ".go",
+    ".rs",
+    ".rb",
+    ".java",
+    ".php",
+    ".swift",
+    ".kt",
+)
+
+
+def applicable(tool: str, target: str) -> bool:
+    """Whether a step makes sense for this target.
+
+    Asking a code analyzer to read a Markdown file is not a task, it is a
+    mistake, and it would fail the run for no reason. Such a step is left
+    out of the plan instead.
+    """
+    if tool != "code.analyze":
+        return True
+    if not target:
+        return False
+    return Path(target).suffix.lower() in CODE_SUFFIXES
+
+
 TOOL_ARGUMENTS = {
     "file.list": ("path",),
     "file.read": ("path",),
@@ -77,6 +112,8 @@ class AgentRunner:
                 if tool not in tools:
                     tool = tools[0] if tools else "file.read"
                 target = step.get("target") or (paths[0] if paths else (urls[0] if urls else ""))
+                if not applicable(tool, target):
+                    continue
                 steps.append(
                     PlanStep(
                         id=f"step-{index}",
@@ -103,6 +140,10 @@ class AgentRunner:
                     target = urls[0] if urls else ""
                 elif tool == "code.analyze":
                     target = paths[0] if paths else ""
+                if not applicable(tool, target):
+                    # The step does not fit the target, so it is left out
+                    # rather than run and failed.
+                    continue
                 steps.append(
                     PlanStep(
                         id=f"step-{index}",

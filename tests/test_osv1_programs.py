@@ -52,5 +52,13 @@ def test_the_allowlist_can_be_read_from_the_environment(monkeypatch) -> None:
 def test_the_allowlist_check_ignores_the_path(tmp_path: Path) -> None:
     runner = ProgramRunner(allowlist=["python"], workspace=tmp_path)
     assert runner.allowed("python") is True
-    assert runner.allowed(r"C:\Python\python.exe") is True
+    assert runner.allowed(sys.executable) is True
     assert runner.allowed("powershell") is False
+
+
+def test_a_windows_style_path_is_understood_on_any_platform(tmp_path: Path) -> None:
+    from osv1.tools.program_tools import program_name
+
+    assert program_name(r"C:\Python\python.exe") == "python"
+    assert program_name("/usr/bin/python3") == "python3"
+    assert program_name("python") == "python"

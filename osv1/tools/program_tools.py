@@ -26,6 +26,20 @@ from osv1.tools.registry import RISK_EXECUTE, Tool, ToolResult
 from osv1.tools.sandbox import sandbox_env
 
 
+def program_name(program: str) -> str:
+    """The bare name of a program, on any platform.
+
+    A path is split on both separators, so a Windows-style path is still
+    understood when the check runs on Linux, and the ``.exe`` suffix is
+    dropped.
+    """
+    text = str(program).strip().replace("\\", "/")
+    name = text.rsplit("/", 1)[-1].lower()
+    if name.endswith(".exe"):
+        name = name[:-4]
+    return name
+
+
 @dataclass
 class ProgramRunner:
     """Starts allowed programs, and refuses everything else."""
@@ -42,10 +56,8 @@ class ProgramRunner:
 
     def allowed(self, program: str) -> bool:
         """True when the program is on the allowlist."""
-        name = Path(program).name.lower()
-        if name.endswith(".exe"):
-            name = name[:-4]
-        return any(name == entry or name == f"{entry}.exe" for entry in self.allowlist)
+        name = program_name(program)
+        return any(name == entry for entry in self.allowlist)
 
     def resolve(self, program: str) -> str | None:
         """Find the program on the PATH, when it is allowed."""

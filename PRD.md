@@ -47,14 +47,17 @@ python -m osv1.interface.api        # الواجهة الحية على http://12
 | POST | `/killswitch/engage` | إيقاف فوري لكل النشاط | 200 |
 | POST | `/killswitch/release` | استئناف | 200 |
 | GET | `/metrics` | المقاييس الخمسة + حالة System One | 200 |
+| GET | `/provenance` | سجل المصدر والترخيص لكل ما يستخدمه النظام | 200 |
+| POST | `/provenance` | `{kind, name, origin, license, version, notes}` | 200 |
+| GET | `/context` | نافذة السياق حسب فئة الجهاز | 200 |
 
-**قواعد التحقق:** `task` بين حرفين و10.000 حرف · `agent_id` اختياري · `limit` بين 1 و500 · `scope` من: `files`, `network`, `programs`, `irreversible`.
+**قواعد التحقق:** `task` بين حرفين و10.000 حرف · `agent_id` اختياري · `limit` بين 1 و500 · `scope` من: `files`, `network`, `programs`, `irreversible` · `kind` من: `model`, `dataset`, `tool`, `dependency`, `skill`.
 
 ## 3. واجهة سطر الأوامر
 
 `oss-v1 <command>`:
 
-`plan` · `build` · `agents` · `agent` · `status` · `memory` · `audit` · `grant` · `revoke` · `approvals` · `kill` · `metrics` · `practice` · `weekly` · `serve` · `version`
+`plan` · `build` · `agents` · `agent` · `status` · `memory` · `audit` · `grant` · `revoke` · `approvals` · `kill` · `metrics` · `provenance` · `evaluate` · `context` · `practice` · `weekly` · `serve` · `version`
 
 ## 4. الوكلاء الـ300
 

@@ -58,6 +58,34 @@ and no inherited secrets, a built-in spreadsheet engine that writes real
 REA analysis adapter, and App Synthesis — which understands a file format and
 builds the matching tool inside the system.
 
+### The context window
+
+`osv1/context.py` implements the capacity rules of section 10: the window
+scales with the device tier (Lite 128K, Standard 256K, Pro 1M), the token
+count is an estimate with the method stated, and a request that does not fit
+is summarized rather than dropped — by the local model when it is up, by an
+extractive rule otherwise, with the source named in the result. Long answers
+are written as chunks with checkpoints, so an interrupted run resumes.
+
+### Provenance
+
+`osv1/provenance.py` records the origin and the licence of every model,
+dataset, tool, and dependency the system uses, and puts anything that is not
+a permissive licence into the review queue before it is used (sections 20
+and 23).
+
+### The evaluation harness
+
+`osv1/eval/harness.py` runs the per-layer suites separately, plants known
+errors in real artifacts to measure the verification catch rate — with a
+control case, so the number means something — and checks that the core still
+plans with the language model unreachable.
+
+### Program control
+
+`osv1/tools/program_tools.py` starts only the programs the user allowed,
+from the workspace, with a scrubbed environment and a time limit.
+
 ### The interface
 
 A local API on the loopback interface, a command line, and a live console

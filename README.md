@@ -72,15 +72,26 @@ fails the build if the README drifts away from the code.
 | Claim | Value | How it is counted |
 |---|---|---|
 | Specialized agents | **300** | 30 domains × 10 specializations, asserted in the registry |
-| Python modules | **54** | `osv1/**/*.py` |
-| Lines of implementation | **~9,900** | the same modules |
-| Tools the agent layer can run | **19** | the tool registry at runtime |
-| Local API endpoints | **22** | the `@app` decorators in `osv1/interface/api.py` |
-| Tests | **141** | `python -m pytest tests/ -q` — offline, no keys, no engine |
+| Python modules | **58** | `osv1/**/*.py` |
+| Lines of implementation | **~11,400** | the same modules |
+| Tools the agent layer can run | **20** | the tool registry at runtime |
+| Local API endpoints | **25** | the `@app` decorators in `osv1/interface/api.py` |
+| Tests | **168** | `python -m pytest tests/ -q` — offline, no keys, no engine |
 
-Nothing here is a benchmark claim. The five metrics of the specification are
-implemented and reported per run, but a held-out evaluation set does not exist
-yet — that is listed in [todo.md](todo.md), not implied to be done.
+Nothing here is a benchmark claim against another system. The five metrics of
+the specification are implemented and reported per run, and the evaluation
+harness measures what it can measure today — with the sample count next to
+every number:
+
+```bash
+oss-v1 evaluate
+# suites: 13/13 passed
+# verification_catch_rate: 1.0  (5 seeded errors, all caught; the control case passes)
+# independence: true  (the core plans with the model unreachable)
+```
+
+A held-out evaluation set and a long-context benchmark do not exist yet; that
+is listed in [todo.md](todo.md), not implied to be done.
 
 ## Architecture
 
@@ -126,12 +137,50 @@ Each agent is a capability profile, not a persona: what it may use, what it
 must produce, and what has to be true before its answer is delivered.
 [docs/AGENTS.md](docs/AGENTS.md) has the full table.
 
+## The context window
+
+The window scales with the device tier: Lite 128K, Standard 256K, Pro 1M
+(§23). A request that does not fit is **summarized, not dropped** — the
+overflow is listed with what replaced it, and the summary comes from the
+local model when it is up and from a rule-based extract otherwise, which the
+result says out loud.
+
+```bash
+oss-v1 context --file report.md     # how a text fits in this machine's window
+```
+
+Long answers are produced as chunks with checkpoints, so an interrupted run
+resumes instead of starting over.
+
+## Provenance
+
+Every model, dataset, tool, and dependency is recorded with its origin and
+its licence, and anything that is not a permissive licence is put in the
+review queue before it is used (§20, §23).
+
+```bash
+oss-v1 provenance
+oss-v1 provenance --add model "my model" "C:/models/mine.gguf" "unknown"
+```
+
+## Evaluation
+
+```bash
+oss-v1 evaluate
+```
+
+The harness runs the per-layer suites separately, plants known errors in real
+artifacts to measure the verification catch rate, and checks that the core
+still works with the language model unreachable. The report lands in
+`data-osv1/evaluation.json`.
+
 ## The safety layer
 
 | Control | Behaviour |
 |---|---|
 | Permission scopes | files, network, programs, and irreversible actions are granted explicitly and can be revoked |
 | Human approval | deleting, sending, paying, publishing, and system changes wait for your decision |
+| Program control | only programs on the user's allowlist start, from the workspace, with a scrubbed environment |
 | Audit log | every action is chained by hash, so an edited or removed line is detected |
 | Kill switch | one file stops every action, the scheduler, and the background work |
 | Injection defence | content from files, pages, and tools is data, never an instruction |
@@ -230,14 +279,16 @@ osv1/
 ├── contracts.py         the typed objects that cross every boundary
 ├── som.py               System One: typed decisions and abstention
 ├── calibration.py       ECE, Brier, temperature scaling
+├── context.py           the context window, overflow summarization, checkpoints
+├── provenance.py        the origin and licence of everything that is used
 ├── engine/              the local engine client and System Two
 ├── layers/              the six layers of the specification
 ├── agents/              30 domains, 10 specializations, 300 agents, the runner
-├── tools/               files, code, sandbox, spreadsheet, dashboard, reader, REA, synthesis
+├── tools/               files, code, sandbox, spreadsheet, dashboard, reader, REA, synthesis, programs
 ├── memory/              facts, experiences, skills, assumptions, versioning
 ├── learning/            self-evolution, practice, personalization, scheduler
 ├── safety/              permissions, approvals, audit, kill switch, injection, secrets
-├── eval/                the five measurable metrics
+├── eval/                the five measurable metrics and the evaluation harness
 ├── interface/           the local API, the command line, the live console
 └── sync.py              the optional encrypted archive
 docs/                    architecture, agents, and the Arabic guide

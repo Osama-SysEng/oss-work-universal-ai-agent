@@ -85,6 +85,15 @@ class DecisionBody(BaseModel):
     by: str = Field(default="user", max_length=64)
 
 
+class ProvenanceBody(BaseModel):
+    kind: str = Field(min_length=2, max_length=32)
+    name: str = Field(min_length=1, max_length=200)
+    origin: str = Field(min_length=1, max_length=1024)
+    license: str = Field(default="unknown", max_length=200)
+    version: str = Field(default="", max_length=64)
+    notes: str = Field(default="", max_length=1000)
+
+
 app = FastAPI(
     title="OSS Work / OS_V1 — local API",
     version="1.0.0",
@@ -253,6 +262,36 @@ def metrics() -> dict[str, Any]:
 @app.get("/catalog")
 def catalog() -> dict[str, Any]:
     return REGISTRY.catalog()
+
+
+@app.get("/provenance")
+def provenance() -> dict[str, Any]:
+    """What the system uses, and under which licence."""
+    return RUNTIME.provenance.report()
+
+
+@app.post("/provenance")
+def provenance_add(body: ProvenanceBody) -> dict[str, Any]:
+    record = RUNTIME.provenance.add(
+        body.kind,
+        body.name,
+        body.origin,
+        license=body.license,
+        version=body.version,
+        notes=body.notes,
+    )
+    return record.as_dict()
+
+
+@app.get("/context")
+def context_status() -> dict[str, Any]:
+    """The context window of this device tier."""
+    settings = RUNTIME.settings
+    return {
+        "tier": settings.tier,
+        "window_tokens": settings.context_tokens,
+        "estimate": "four characters per token, for mixed English and Arabic text",
+    }
 
 
 def main() -> None:

@@ -23,6 +23,13 @@ to happen before the system is used for anything that matters.
   interface only.
 - The REA adapter runs the built-in analyzer when the pinned REA engine is
   not installed locally, and says which engine produced each finding.
+- The dedicated operating-system account that the specification describes
+  for computer use is deployment work. The application-level boundary around
+  program execution is in place (allowlist, confined working directory,
+  scrubbed environment, time limit); the second account is not created by the
+  agent, and creating one is a decision for the user.
+- The context window is measured with a character-to-token estimate, not a
+  tokenizer. The method is stated in every result that reports a token count.
 
 ## Work that has to happen before production
 

@@ -46,6 +46,7 @@ TOOL_SCOPE = {
     "office.deck": SCOPE_FILES,
     "web.read": SCOPE_NETWORK,
     "rea.analyze": SCOPE_FILES,
+    "program.run": SCOPE_PROGRAMS,
 }
 
 APPROVAL_ACTIONS = {"file.delete": "delete"}
@@ -272,6 +273,9 @@ class ActionEngine:
         elif step.tool == "rea.analyze":
             arguments["target"] = step.target
             arguments["authorization_basis"] = step.detail
+        elif step.tool == "program.run":
+            arguments["program"] = step.target
+            arguments["arguments"] = step.detail
         try:
             return self.context.tools.execute(step.tool, **arguments)
         except TypeError as exc:

@@ -19,6 +19,7 @@ from osv1.agents.domains import DOMAIN_BY_KEY
 from osv1.agents.registry import REGISTRY, AgentSpec
 from osv1.agents.specializations import SPECIALIZATION_BY_KEY
 from osv1.config import DEVICE_TIERS, Settings
+from osv1.context import ContextWindow
 from osv1.contracts import TaskResult, utc_now
 from osv1.engine.llm import LlmClient
 from osv1.eval.metrics import RunMetrics
@@ -29,6 +30,7 @@ from osv1.layers.input_layer import InputLayer
 from osv1.layers.reasoning import ReasoningEngine
 from osv1.layers.world_model import WorldModel
 from osv1.memory.store import MemoryStore
+from osv1.provenance import ProvenanceRegistry
 from osv1.safety.approvals import ApprovalStore
 from osv1.safety.audit import AuditLog
 from osv1.safety.killswitch import KillSwitch
@@ -41,6 +43,7 @@ from osv1.tools.dashboard import DashboardTools
 from osv1.tools.file_tools import FileTools
 from osv1.tools.office import Office
 from osv1.tools.office import register as office_register
+from osv1.tools.program_tools import ProgramRunner, allowlist_from_env
 from osv1.tools.rea import ReaEngine
 from osv1.tools.registry import ToolRegistry
 from osv1.tools.sandbox import run_python
@@ -70,6 +73,7 @@ class OSRuntime:
         self.approvals = ApprovalStore(path=self.settings.data_dir / "approvals.json").load()
         self.audit = AuditLog(path=self.settings.audit_log).load()
         self.kill_switch = KillSwitch(path=self.settings.kill_switch_file)
+        self.provenance = ProvenanceRegistry(path=self.settings.data_dir / "provenance.json").load()
         self.tools = ToolRegistry()
         self._register_tools()
         self._grant_workspace()
@@ -87,6 +91,11 @@ class OSRuntime:
         AppSynthesis(skills_dir=Path(self.settings.skills_dir)).register(self.tools)
         ReaEngine().register(self.tools)
         office_register(self.tools, Office(settings=self.settings))
+        ProgramRunner(
+            allowlist=allowlist_from_env(),
+            workspace=Path(self.settings.workspace_dir),
+            max_output_bytes=self.settings.max_output_bytes,
+        ).register(self.tools)
 
     def _grant_workspace(self) -> None:
         """The workspace, the data directory, and the working folder are granted."""
@@ -186,8 +195,24 @@ class OSRuntime:
 
         # 8.1 Multimodal Input
         bundle = InputLayer().from_task(context, task)
+
+        # Spec section 10: the window scales with the device tier, and an
+        # overflow is summarized from memory rather than dropped silently.
+        window = ContextWindow(
+            window_tokens=self.settings.context_tokens,
+            reserve_for_output=max(1, min(8_000, self.settings.context_tokens // 8)),
+            summarizer=self.engine,
+        )
+        context_plan = window.fit([(item.source, item.payload) for item in bundle.inputs])
+        context.emit(
+            "context.fitted",
+            window_tokens=context_plan.window_tokens,
+            used_tokens=context_plan.used_tokens,
+            overflowed=context_plan.overflowed,
+        )
+
         world = WorldModel(context=context)
-        world.snapshot(bundle.texts()[0] if bundle.texts() else "")
+        world.snapshot(context_plan.text())
 
         # 8.3 Reasoning Engine
         reasoning = ReasoningEngine(context=context)
@@ -216,6 +241,7 @@ class OSRuntime:
         result.decision = decision
         result.metrics["routing"] = routing
         result.metrics["agent"] = agent.as_dict()
+        result.metrics["context"] = context_plan.as_dict()
 
         if decision.outcome == "ask_user":
             result.status = "needs_information"
@@ -323,6 +349,7 @@ class OSRuntime:
             "kill_switch": self.kill_switch.status(),
             "audit": self.audit.verify_chain(),
             "som": self.som.stats(),
+            "provenance": self.provenance.report(),
             "tiers": {key: tier.note for key, tier in DEVICE_TIERS.items()},
         }
 

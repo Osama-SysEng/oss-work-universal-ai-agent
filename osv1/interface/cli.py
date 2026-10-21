@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 from osv1.agents.registry import REGISTRY
@@ -174,6 +175,68 @@ def cmd_weekly(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_provenance(args: argparse.Namespace) -> int:
+    """Show or edit the record of what is used and under which licence."""
+    from osv1.provenance import ProvenanceRegistry
+
+    registry = ProvenanceRegistry(path=runtime().settings.data_dir / "provenance.json").load()
+    if args.add:
+        kind, name, origin, license_name = args.add[0], args.add[1], args.add[2], args.add[3]
+        record = registry.add(kind, name, origin, license=license_name, version=args.version or "")
+        _print(record.as_dict())
+        return 0
+    if args.remove:
+        _print({"removed": registry.remove(args.remove)})
+        return 0
+    _print(registry.report())
+    return 0
+
+
+def cmd_evaluate(args: argparse.Namespace) -> int:
+    """Run the evaluation harness: the per-layer suites, error injection, independence."""
+    from osv1.eval.harness import Harness
+
+    harness = Harness(project_root=Path.cwd())
+    report = harness.run()
+    _print(
+        {
+            "suites": f"{report['suites_passed']}/{report['suites_total']} passed",
+            "verification_catch_rate": report["verification_catch_rate"],
+            "verification_catch_samples": report["verification_catch_samples"],
+            "control_passed": report["control_passed"],
+            "independence": report["independence"]["ok"],
+            "report": str(harness.report_path),
+        }
+    )
+    return 0 if report["suites_passed"] == report["suites_total"] else 1
+
+
+def cmd_context(args: argparse.Namespace) -> int:
+    """Show how a text would fit in the context window of this device tier."""
+    from osv1.context import ContextWindow, estimate_tokens
+
+    settings = runtime().settings
+    window = ContextWindow(
+        window_tokens=settings.context_tokens,
+        reserve_for_output=max(1, min(8_000, settings.context_tokens // 8)),
+    )
+    text = args.text
+    if args.file:
+        text = Path(args.file).read_text(encoding="utf-8", errors="replace")
+    plan = window.fit([("input", text)])
+    _print(
+        {
+            "window_tokens": plan.window_tokens,
+            "input_budget": window.input_budget,
+            "used_tokens": plan.used_tokens,
+            "estimated_tokens": estimate_tokens(text),
+            "overflowed": plan.overflowed,
+            "notes": plan.notes,
+        }
+    )
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -271,6 +334,25 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8080)
     serve.set_defaults(func=cmd_serve)
+
+    provenance = sub.add_parser("provenance", help="what is used, and under which licence")
+    provenance.add_argument(
+        "--add",
+        nargs=4,
+        metavar=("KIND", "NAME", "ORIGIN", "LICENSE"),
+        help="record a model, dataset, tool, dependency, or skill",
+    )
+    provenance.add_argument("--remove", default="", help="remove a record by name")
+    provenance.add_argument("--version", default="", help="the version of the added record")
+    provenance.set_defaults(func=cmd_provenance)
+
+    evaluate = sub.add_parser("evaluate", help="run the evaluation harness")
+    evaluate.set_defaults(func=cmd_evaluate)
+
+    context_cmd = sub.add_parser("context", help="how a text fits in the context window")
+    context_cmd.add_argument("--text", default="")
+    context_cmd.add_argument("--file", default="")
+    context_cmd.set_defaults(func=cmd_context)
 
     version = sub.add_parser("version", help="the product and model version")
     version.set_defaults(func=cmd_version)

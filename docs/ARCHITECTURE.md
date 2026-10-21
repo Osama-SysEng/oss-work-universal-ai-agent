@@ -38,17 +38,57 @@ so a template is never passed off as a model response.
 | `osv1/contracts.py` | the typed objects that cross every boundary |
 | `osv1/som.py` | System One: typed decisions, abstention, calibration |
 | `osv1/calibration.py` | ECE, Brier, temperature scaling |
+| `osv1/context.py` | the context window, overflow summarization, chunk checkpoints |
+| `osv1/provenance.py` | the origin and licence of every model, dataset, and tool |
 | `osv1/engine/local_engine.py` | the llama.cpp client |
 | `osv1/engine/llm.py` | System Two: plans, hypotheses, chunked generation |
 | `osv1/layers/` | the six layers |
 | `osv1/agents/` | 30 domains, 10 specializations, 300 agents, the runner |
-| `osv1/tools/` | files, code, sandbox, spreadsheet, dashboard, reader, REA, synthesis |
+| `osv1/tools/` | files, code, sandbox, spreadsheet, dashboard, reader, REA, synthesis, programs |
 | `osv1/memory/` | facts, experiences, skills, assumptions, versioning, rollback |
 | `osv1/learning/` | self-evolution, practice sessions, weekly personalization, scheduler |
 | `osv1/safety/` | permissions, approvals, audit, kill switch, injection, secrets |
-| `osv1/eval/` | the five measurable metrics |
+| `osv1/eval/` | the five measurable metrics and the evaluation harness |
 | `osv1/interface/` | the local API, the command line, the live console |
 | `osv1/sync.py` | the optional encrypted archive for storage the user owns |
+
+## The context window
+
+The window comes from the device tier: Lite 128K, Standard 256K, Pro 1M.
+The token count is an estimate — four characters per token for mixed English
+and Arabic text — and the method is stated wherever the number is used.
+
+A request that does not fit is summarized, not dropped:
+
+1. the pieces that fit stay whole;
+2. the rest is summarized — by the local model when it is up, by an
+   extractive rule otherwise, and the result says which one produced it;
+3. every overflowed piece is listed in the result with what replaced it.
+
+Long answers are written as chunks with checkpoints under
+`data-osv1/state/<request>/`, so an interrupted run resumes where it stopped.
+
+## The evaluation harness
+
+`osv1/eval/harness.py` measures three things it can actually measure:
+
+- **the per-layer suites** — each layer has its own tests, and the harness
+  reports them separately;
+- **the verification catch rate** — known errors are planted in real
+  artifacts (a promised file that was never written, a failed action reported
+  as a success, an answer that ignores the goal, an instruction lifted from
+  untrusted content, an empty answer), and a control case checks that a
+  correct answer still passes. Without the control, the number would mean
+  nothing;
+- **the independence check** — the core is exercised with the language model
+  unreachable, so a run that secretly needs a provider fails here.
+
+## Program control
+
+Only programs on the user's allowlist start, from the workspace, with a
+scrubbed environment and a time limit. The dedicated operating-system account
+that the specification describes is deployment work, and it is listed in
+`todo.md` rather than implied to be done.
 
 ## The data that flows
 

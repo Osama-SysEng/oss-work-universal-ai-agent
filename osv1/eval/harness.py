@@ -262,6 +262,62 @@ class Harness:
 
     # ── the report ────────────────────────────────────────────
 
+    def quality_report(self) -> dict[str, Any]:
+        """The thirteen qualities: what is measured, and what is still a target.
+
+        A quality is only *measured* when a number with a sample count backs
+        it. Everything else stays a target, and the report says so.
+        """
+        from osv1.quality.qualities import FIXED_FOUNDATIONS, QUALITIES, tier_kv_cache
+
+        suites = self.run_all_suites()
+        injected = self.inject_errors()
+        seeded = [item for item in injected if not item.name.startswith("control:")]
+        caught = sum(1 for item in seeded if item.caught)
+        independence = self.independence_check()
+
+        measured: dict[str, Any] = {
+            "speed": {
+                "metric": "suite duration",
+                "seconds": round(sum(suite.duration_s for suite in suites), 2),
+                "samples": len(suites),
+            },
+            "power": {
+                "metric": "end-to-end completion rate of the suite files",
+                "value": round(sum(1 for suite in suites if suite.passed) / len(suites), 4) if suites else None,
+                "samples": len(suites),
+            },
+            "absolute-safety": {
+                "metric": "verification catch rate, with a control case",
+                "value": round(caught / len(seeded), 4) if seeded else None,
+                "samples": len(seeded),
+                "control_passed": all(item.caught for item in injected if item.name.startswith("control:")),
+            },
+            "independence": {
+                "metric": "the core works with the model unreachable",
+                "value": independence["ok"],
+                "samples": 1,
+            },
+            "reverse-engineering": {
+                "metric": "the generated tool passed its own smoke test",
+                "value": None,
+                "samples": 0,
+                "note": "measured per synthesis run, not by the suite",
+            },
+        }
+        targets = {quality.key: quality.test for quality in QUALITIES if quality.key not in measured}
+        notes = [
+            "a quality with a number is measured; everything else is a target",
+            "the fixed foundations are not qualities to optimize: they are the limits that stay",
+        ]
+        return {
+            "measured": measured,
+            "targets": targets,
+            "notes": notes,
+            "fixed_foundations": [{"key": key, "rule": rule} for key, rule in FIXED_FOUNDATIONS],
+            "tier_memory": {tier: tier_kv_cache(tier) for tier in ("lite", "standard", "pro")},
+        }
+
     def run(self) -> dict[str, Any]:
         """Run everything and write the report."""
         started = time.time()

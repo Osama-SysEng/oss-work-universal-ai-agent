@@ -86,6 +86,27 @@ plans with the language model unreachable.
 `osv1/tools/program_tools.py` starts only the programs the user allowed,
 from the workspace, with a scrubbed environment and a time limit.
 
+### The thirteen qualities and their models
+
+The specification of section 27 asks for each ambition to become a model
+that can be computed, tested, and improved. `osv1/quality/` is that layer:
+the register of the thirteen qualities with their laws, engineering rules,
+and tests, and the formulas as functions. Every formula is checked against
+the worked example the specification gives for it.
+
+Three of the engineering rules became code rather than commentary:
+
+- the verifier checks the arithmetic in an answer against values recomputed
+  from the source, checks that stated probabilities sum to one, and labels
+  the outcome *tested, not proven* outside the decidable fragments;
+- the world model reports the negative log-likelihood and the KL divergence
+  between what it predicted and what happened, with their sample counts;
+- the memory cost of the full context window is computed per device tier,
+  in 16-bit and in 4-bit.
+
+`oss-v1 qualities --report` separates what is measured from what is still a
+target, and never mixes the two.
+
 ### The interface
 
 A local API on the loopback interface, a command line, and a live console

@@ -237,6 +237,20 @@ def cmd_context(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_qualities(args: argparse.Namespace) -> int:
+    """The thirteen qualities: the law, the rule, the test, and what is measured."""
+    from osv1.quality.qualities import catalog
+
+    if args.report:
+        from osv1.eval.harness import Harness
+
+        report = Harness(project_root=Path.cwd()).quality_report()
+        _print(report)
+        return 0
+    _print(catalog())
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -348,6 +362,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     evaluate = sub.add_parser("evaluate", help="run the evaluation harness")
     evaluate.set_defaults(func=cmd_evaluate)
+
+    qualities = sub.add_parser("qualities", help="the thirteen qualities and their models")
+    qualities.add_argument("--report", action="store_true", help="what is measured today")
+    qualities.set_defaults(func=cmd_qualities)
 
     context_cmd = sub.add_parser("context", help="how a text fits in the context window")
     context_cmd.add_argument("--text", default="")

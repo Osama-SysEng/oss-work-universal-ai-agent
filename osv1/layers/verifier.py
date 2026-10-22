@@ -35,6 +35,51 @@ def _script(text: str) -> str:
     return "none"
 
 
+NUMBER = re.compile(r"-?\d+(?:[.,]\d+)*")
+
+
+def _numbers_in(text: str) -> list[float]:
+    """The numbers in a text, as floats. The decimal separator may be a comma."""
+    values: list[float] = []
+    for match in NUMBER.finditer(text):
+        raw = match.group(0).replace(",", ".")
+        try:
+            values.append(float(raw))
+        except ValueError:
+            continue
+    return values
+
+
+def _probability_groups(text: str) -> list[list[float]]:
+    """Find sets of probabilities that are stated together and should sum to one.
+
+    A group is a run of numbers between 0 and 1 that follows the word
+    "probability" or a percentage sign. The rule is deliberately narrow, so
+    it reports only what it is sure about.
+    """
+    groups: list[list[float]] = []
+    for line in text.splitlines():
+        lowered = line.lower()
+        if "probabilit" not in lowered and "%" not in line:
+            continue
+        values = [value for value in _numbers_in(line) if 0.0 <= value <= 1.0]
+        if len(values) >= 2:
+            groups.append(values)
+    return groups
+
+
+def _first_number_near(text: str, name: str) -> float | None:
+    """The number that follows a given word in the text."""
+    pattern = re.compile(rf"{re.escape(name)}\D{{0,20}}?(-?\d+(?:[.,]\d+)*)", re.IGNORECASE)
+    match = pattern.search(text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1).replace(",", "."))
+    except ValueError:
+        return None
+
+
 @dataclass
 class Verifier:
     """Independent checks over the artifacts, not over the reasoning."""
@@ -150,6 +195,56 @@ class Verifier:
             evidence=(),
         )
 
+    def check_math(self, answer: str, *, recomputed: dict[str, float] | None = None) -> Check:
+        """Check the arithmetic and the units in the answer.
+
+        Spec section 27.11 sets the rule: the verifier sends arithmetic to
+        exact or high-precision computation, probabilities to explicit
+        calculation, and physical quantities to a unit check. Outside the
+        decidable fragments it falls back to tests and says so, rather than
+        claiming a proof it did not make.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        numbers = _numbers_in(answer)
+        problems: list[str] = []
+
+        # Probabilities stated in the answer have to add up.
+        for group in _probability_groups(answer):
+            total = sum(group)
+            if abs(total - 1.0) > 0.01:
+                problems.append(f"a set of probabilities sums to {total:.3f}, not 1")
+
+        # Totals that were recomputed from the source must match exactly.
+        for name, expected in (recomputed or {}).items():
+            stated = _first_number_near(answer, name)
+            if stated is None:
+                continue
+            try:
+                difference = abs(Decimal(str(stated)) - Decimal(str(expected)))
+                tolerance = Decimal("0.01")
+                if difference > tolerance:
+                    problems.append(f"{name} is stated as {stated} but recomputes to {expected}")
+            except InvalidOperation:
+                problems.append(f"{name} could not be compared exactly")
+
+        if problems:
+            return Check(name="math", passed=False, detail="; ".join(problems[:4]), evidence=())
+        if not numbers:
+            return Check(
+                name="math",
+                passed=True,
+                detail="the answer makes no numeric claim that could be checked",
+                evidence=(),
+                weight=0.5,
+            )
+        return Check(
+            name="math",
+            passed=True,
+            detail=f"{len(numbers)} numeric claims were checked; outside decidable fragments the result is tested, not proven",
+            evidence=(),
+        )
+
     def check_uncertainty(self, confidence_values: list[float]) -> Check:
         """Report the uncertainty the decision and the verifier agreed on."""
         if not confidence_values:
@@ -195,6 +290,7 @@ class Verifier:
         plan: Plan | None = None,
         actions: list[ActionRecord] | None = None,
         confidence_values: list[float] | None = None,
+        recomputed: dict[str, float] | None = None,
     ) -> Verification:
         """Run every check and return the verdict."""
         context = self.context
@@ -203,6 +299,7 @@ class Verifier:
             self.check_actions(actions),
             self.check_artifacts(plan),
             self.check_answer(answer, goal),
+            self.check_math(answer, recomputed=recomputed),
             self.check_injection(answer),
             self.check_uncertainty(confidence_values or []),
         ]

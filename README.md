@@ -72,11 +72,11 @@ fails the build if the README drifts away from the code.
 | Claim | Value | How it is counted |
 |---|---|---|
 | Specialized agents | **300** | 30 domains × 10 specializations, asserted in the registry |
-| Python modules | **58** | `osv1/**/*.py` |
-| Lines of implementation | **~11,500** | the same modules |
+| Python modules | **61** | `osv1/**/*.py` |
+| Lines of implementation | **~12,900** | the same modules |
 | Tools the agent layer can run | **20** | the tool registry at runtime |
-| Local API endpoints | **25** | the `@app` decorators in `osv1/interface/api.py` |
-| Tests | **177** | `python -m pytest tests/ -q` — offline, no keys, no engine |
+| Local API endpoints | **27** | the `@app` decorators in `osv1/interface/api.py` |
+| Tests | **231** | `python -m pytest tests/ -q` — offline, no keys, no engine |
 
 Nothing here is a benchmark claim against another system. The five metrics of
 the specification are implemented and reported per run, and the evaluation
@@ -178,6 +178,45 @@ The harness runs the per-layer suites separately, plants known errors in real
 artifacts to measure the verification catch rate, and checks that the core
 still works with the language model unreachable. The report lands in
 `data-osv1/evaluation.json`.
+
+## The thirteen qualities
+
+The specification names thirteen qualities and gives each one a law, a
+formula, an engineering rule, and a test. They are not adjectives here:
+every formula is code in `osv1/quality/models.py`, every rule is enforced
+where it belongs, and every formula is checked against the worked example
+the specification gives for it.
+
+| # | Quality | Law | Where it lives |
+|---|---|---|---|
+| 1 | Speed | Roofline and Amdahl | `quality.models:prefill_time, amdahl_speedup` |
+| 2 | Intelligence | No Free Lunch, best-of-n | `quality.models:best_of_n_success, confidence_interval` |
+| 3 | Power | Reliability compounding | `quality.models:job_reliability, step_reliability_with_retry` |
+| 4 | Faster learning | PAC bound, power law of practice | `quality.models:fit_learning_curve` |
+| 5 | Imagination | World model, simulation lemma | `quality.models:negative_log_likelihood, kl_divergence` |
+| 6 | Human-mind simulation (Ultra IQ) | Dual-process cascade | `quality.models:cascade_time, chow_threshold` |
+| 7 | Absolute safety | Rule of three | `quality.models:rule_of_three` + the immutable core |
+| 8 | Best reverse engineering | Data-processing inequality | `quality.models:behavioral_parity, mismatch_bound` |
+| 9 | Independence | Series availability | `quality.models:series_availability` + the offline suite |
+| 10 | The SOM | Decision theory, proper scoring | `quality.models:softmax, combine_logits, value_of_information` |
+| 11 | Mathematical logic | Floating-point error, units | `quality.models:relative_error` + `verifier.check_math` |
+| 12 | Scientific grounding | Bayesian evidence | `quality.models:posterior_odds, sample_size_for_margin` |
+| 13 | Absolute knowledge | Entropy, KV-cache physics | `quality.models:knowledge_gap, kv_cache_bytes` |
+
+```bash
+oss-v1 qualities           # the register
+oss-v1 qualities --report  # what is measured today, and what is still a target
+```
+
+Three of the rules are code, not commentary: the verifier checks the
+arithmetic in an answer and labels the result *tested, not proven* outside
+the decidable fragments; the world model reports the negative log-likelihood
+and KL divergence between what it predicted and what happened; and the
+memory cost of the full window is computed per device tier instead of
+guessed.
+
+The full table, the three foundations that stay fixed, and the limits that
+physics does not allow breaking are in [docs/QUALITIES.md](docs/QUALITIES.md).
 
 ## The safety layer
 
@@ -307,6 +346,7 @@ desktop/                 the Tauri shell
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | the layers, the modules, the state on disk |
 | [docs/AGENTS.md](docs/AGENTS.md) | the 30 domains, the 10 specializations, routing |
+| [docs/QUALITIES.md](docs/QUALITIES.md) | the thirteen qualities, their laws, their models, and the three fixed foundations |
 | [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | the trust boundaries, the abuse cases, the residual risks |
 | [docs/SUPPLY_CHAIN.md](docs/SUPPLY_CHAIN.md) | the dependency licences, the pinning, the provenance register |
 | [docs/SCALING.md](docs/SCALING.md) | the device tiers, the context window, and where local ends |

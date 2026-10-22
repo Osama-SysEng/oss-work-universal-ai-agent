@@ -322,6 +322,7 @@ class OSRuntime:
         metrics.finished_at = time.time()
         result.metrics["metrics"] = metrics.as_reports()
         result.metrics["elapsed_s"] = round(time.time() - started, 3)
+        result.metrics["prediction_quality"] = world.prediction_quality()
         result.finished_at = utc_now()
         context.log_action("request.completed", target=task[:120], outcome=result.status)
         return result

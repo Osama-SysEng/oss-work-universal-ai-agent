@@ -294,6 +294,22 @@ def context_status() -> dict[str, Any]:
     }
 
 
+@app.get("/qualities")
+def qualities() -> dict[str, Any]:
+    """The thirteen qualities, their laws, their rules, and their tests."""
+    from osv1.quality.qualities import catalog
+
+    return catalog()
+
+
+@app.get("/qualities/report")
+def qualities_report() -> dict[str, Any]:
+    """What is measured today, and what is still a target."""
+    from osv1.eval.harness import Harness
+
+    return Harness(project_root=Path.cwd()).quality_report()
+
+
 def main() -> None:
     import uvicorn
 

@@ -12,7 +12,8 @@ confidence and triggers verification and a smaller next step.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from osv1.contracts import Prediction, PredictionCheck, WorldState
 from osv1.layers.context import LayerContext
@@ -60,6 +61,31 @@ class WorldModel:
     context: LayerContext
     state: WorldState | None = None
     prediction_gap: float = 0.0
+    predictions: list[tuple[str, float, bool]] = field(default_factory=list)
+
+    def prediction_quality(self) -> dict[str, Any]:
+        """How well the predictions matched reality (spec section 27.5).
+
+        The negative log-likelihood says how unlikely the observed outcomes
+        were under the predictions, and the KL divergence says how far the
+        predicted distribution sits from the observed one. Both need samples,
+        so both carry their count.
+        """
+        from osv1.quality.models import kl_divergence, negative_log_likelihood
+
+        if not self.predictions:
+            return {"nll": None, "kl": None, "samples": 0, "note": "no prediction has been compared yet"}
+        probabilities = [probability for _, probability, _ in self.predictions]
+        outcomes = [1 if observed else 0 for _, _, observed in self.predictions]
+        observed_rate = sum(outcomes) / len(outcomes)
+        predicted_rate = sum(probabilities) / len(probabilities)
+        return {
+            "nll": round(negative_log_likelihood(probabilities, outcomes), 4),
+            "kl": round(kl_divergence([predicted_rate, 1 - predicted_rate], [observed_rate, 1 - observed_rate]), 4),
+            "samples": len(self.predictions),
+            "predicted_success_rate": round(predicted_rate, 4),
+            "observed_success_rate": round(observed_rate, 4),
+        }
 
     def snapshot(self, bundle_text: str = "", *, open_files: list[str] | None = None) -> WorldState:
         """Describe the current state from the request and from memory."""
@@ -112,6 +138,7 @@ class WorldModel:
         matched = bool(ok)
         gap = 0.0 if matched else 0.5
         self.prediction_gap = max(self.prediction_gap, gap)
+        self.predictions.append((prediction.action, prediction.confidence, bool(ok)))
         check = PredictionCheck(
             action=prediction.action,
             predicted=prediction.expected_effect,

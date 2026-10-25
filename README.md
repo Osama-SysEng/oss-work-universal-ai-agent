@@ -72,11 +72,12 @@ fails the build if the README drifts away from the code.
 | Claim | Value | How it is counted |
 |---|---|---|
 | Specialized agents | **300** | 30 domains × 10 specializations, asserted in the registry |
-| Python modules | **61** | `osv1/**/*.py` |
-| Lines of implementation | **~12,900** | the same modules |
+| Python modules | **63** | `osv1/**/*.py` |
+| Lines of implementation | **~13,800** | the same modules |
 | Tools the agent layer can run | **20** | the tool registry at runtime |
-| Local API endpoints | **27** | the `@app` decorators in `osv1/interface/api.py` |
-| Tests | **231** | `python -m pytest tests/ -q` — offline, no keys, no engine |
+| Local API endpoints | **28** | the `@app` decorators in `osv1/interface/api.py` |
+| Held-out evaluation tasks | **58** | the task sets in `osv1/eval/graded.py` |
+| Tests | **276** | `python -m pytest tests/ -q` — offline, no keys, no engine |
 
 Nothing here is a benchmark claim against another system. The five metrics of
 the specification are implemented and reported per run, and the evaluation
@@ -90,7 +91,11 @@ oss-v1 evaluate
 # independence: true  (the core plans with the model unreachable)
 ```
 
-A held-out evaluation set and a long-context benchmark do not exist yet; that
+The held-out evaluation set exists and is measured: **58 tasks** across
+Arabic routing, arithmetic, honesty about unknowable questions, and code.
+The routing result on natural Arabic goals is published with its sample
+count in [docs/EVALUATION.md](docs/EVALUATION.md) — and it is poor, which is
+what the suite is for. A long-context benchmark does not exist yet, and that
 is listed in [todo.md](todo.md), not implied to be done.
 
 ## Architecture
@@ -137,10 +142,17 @@ Each agent is a capability profile, not a persona: what it may use, what it
 must produce, and what has to be true before its answer is delivered.
 [docs/AGENTS.md](docs/AGENTS.md) has the full table.
 
-**Arabic requests work.** Every domain and specialization carries the Arabic
-words people actually use, written as short stems so the inflected forms
-match — `راجع` and `مراجعة` both reach the review agents, `ثغرة` and `ثغرات`
-both reach the security domain, and both spellings of a hamza are listed.
+**Arabic requests are routed — and the measured limit is stated.** Every
+domain and specialization carries the Arabic words people actually use,
+written as short stems so the inflected forms match — `راجع` and `مراجعة`
+both reach the review agents, `ثغرة` and `ثغرات` both reach the security
+domain, and both spellings of a hamza are listed. What the held-out suite
+measured, on 30 ordinary Arabic sentences written from the domain
+definitions and never from the router: **9 / 30 reach the right domain**, and
+System One abstains on 98 % of its routing decisions
+([docs/EVALUATION.md](docs/EVALUATION.md)). The stems generalize to the
+phrasings they were built with, not to arbitrary user sentences — and the
+fix has to come from a development set, never from the test set.
 
 ## The context window
 
@@ -171,13 +183,34 @@ oss-v1 provenance --add model "my model" "C:/models/mine.gguf" "unknown"
 ## Evaluation
 
 ```bash
-oss-v1 evaluate
+oss-v1 evaluate    # the per-layer suites, the planted-error catch rate, independence
+oss-v1 graded      # the held-out suite: 58 tasks, every number with its samples
+oss-v1 cascade     # T1, T2, q, E[T] — the dual-process cascade, measured on this run
 ```
 
 The harness runs the per-layer suites separately, plants known errors in real
 artifacts to measure the verification catch rate, and checks that the core
 still works with the language model unreachable. The report lands in
 `data-osv1/evaluation.json`.
+
+The held-out suite (`oss-v1 graded`) grades 58 tasks — 30 Arabic routing, 15
+arithmetic, 8 honesty-about-unknowable, 5 code — and writes the result to
+`data-osv1/graded-evaluation.json`, which is what moves a quality from a
+target to a measurement. Its routing result, on 30 ordinary Arabic sentences
+written from the domain definitions:
+
+| Measure | Value | Samples |
+|---|---|---|
+| Domain accuracy | **9 / 30 = 0.30** | 30 tasks |
+| `q_abstain` — System One not confident enough to keep its decision | **0.98** | 60 decisions |
+| `t1_p50` — fast-path latency | **40.8 ms** | 60 decisions |
+
+The suite's engine-dependent tasks (the other 28) are **skipped with their
+reason** when the local engine is down, never scored as zero. Two fixes came
+out of measuring them, and both are documented in
+[docs/EVALUATION.md](docs/EVALUATION.md): a plan step that writes a file
+could never pass its content to the tool, and one grader scored a number
+found *inside a question* as an answer.
 
 ## The thirteen qualities
 
@@ -206,6 +239,8 @@ the specification gives for it.
 ```bash
 oss-v1 qualities           # the register
 oss-v1 qualities --report  # what is measured today, and what is still a target
+oss-v1 cascade             # the dual-process cascade: T1, T2, q, E[T] — all measured
+oss-v1 graded              # the held-out suite: routing, arithmetic, honesty, code
 ```
 
 Three of the rules are code, not commentary: the verifier checks the
@@ -291,8 +326,9 @@ which is not installed in this environment.
   that; use a container for a real jail.
 - The personalization artifact is a preference profile, not a trained adapter.
 - The local API has no authentication. Keep it on the loopback interface.
-- There is no held-out benchmark set yet, so the metrics are per-run
-  observations rather than results to compare against other systems.
+- The held-out suite has 58 tasks. That is a small sample, so its numbers are
+  observations on this device with this model — not results to compare
+  against other systems, and not a claim about larger models.
 
 The full list of what is still open is in [todo.md](todo.md).
 
@@ -347,6 +383,7 @@ desktop/                 the Tauri shell
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | the layers, the modules, the state on disk |
 | [docs/AGENTS.md](docs/AGENTS.md) | the 30 domains, the 10 specializations, routing |
 | [docs/QUALITIES.md](docs/QUALITIES.md) | the thirteen qualities, their laws, their models, and the three fixed foundations |
+| [docs/EVALUATION.md](docs/EVALUATION.md) | the held-out suite: what it can prove, what it cannot, and what it measured |
 | [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | the trust boundaries, the abuse cases, the residual risks |
 | [docs/SUPPLY_CHAIN.md](docs/SUPPLY_CHAIN.md) | the dependency licences, the pinning, the provenance register |
 | [docs/SCALING.md](docs/SCALING.md) | the device tiers, the context window, and where local ends |
@@ -360,10 +397,11 @@ desktop/                 the Tauri shell
 
 ## Contributing
 
-Contributions are welcome — especially the held-out evaluation set, a real
-operating-system sandbox, a typed-decision dataset for System One, and a
-second model backend to compare against. Every new capability needs a test
-and a stated limit.
+Contributions are welcome — especially held-out tasks written by someone who
+has never seen the 30 domain definitions (the routing set is frozen, and a
+development set is what the router actually needs), a real operating-system
+sandbox, a typed-decision dataset for System One, and a second model backend
+to compare against. Every new capability needs a test and a stated limit.
 
 ## License
 

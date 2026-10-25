@@ -74,8 +74,28 @@ expert to operate the system or check its work.
 `models.expert_free_completion_rate` counts it: each run contributes
 `(completed, needed_human_intervention)`, and the rate is the share of runs
 that finished without anyone stepping in. It is measured per task batch, with
-the sample count, and it is **not** yet measured on a graded suite — that
-suite does not exist, and the number is not reported as if it did.
+the sample count. The held-out suite below measures the *score* on graded
+tasks; the expert-free rate over a batch of real user goals is still a
+target, and is not reported as if it were measured.
+
+## What moves a quality from target to measured
+
+The held-out suite ([docs/EVALUATION.md](docs/EVALUATION.md)) is what moves
+the qualities that need a *task distribution* rather than a component test.
+When a snapshot of it exists, `oss-v1 qualities --report` reads it and the
+qualities it can honestly speak for stop being targets:
+
+| Quality | What the suite measures |
+|---|---|
+| Intelligence | the score on the held-out tasks, with its confidence interval and its sample count |
+| Human-mind simulation | the cascade of §27.6 — `q`, `T1`, `T2`, `E[T]` — measured on the same runs |
+| Absolute knowledge | the share of answers that did not fabricate on questions nobody can know (a marker-based **proxy**, and labelled as one) |
+| Speed | `p50`/`p95` of the fast path and the slow path, separately |
+
+A snapshot that does not exist is reported as missing — never as zero,
+because "the model was not there" is not a score. The suite never tunes the
+router: its tasks are frozen, and any improvement to the vocabulary has to
+come from a separate development set.
 
 ## Limits that physics and mathematics do not allow breaking
 

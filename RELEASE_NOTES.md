@@ -86,6 +86,69 @@ plans with the language model unreachable.
 `osv1/tools/program_tools.py` starts only the programs the user allowed,
 from the workspace, with a scrubbed environment and a time limit.
 
+### The held-out suite, and a measured cascade
+
+The specification's success test is that a non-expert gets a finished,
+verified result. A suite the system wrote for tasks it knows cannot measure
+that, so `osv1/eval/graded.py` is the suite that can: 58 graded tasks whose
+answers the agents never see while they work.
+
+The routing ground truth is written by hand from the domain definitions,
+never from the router's own decisions — provenance no machine can verify,
+so the suite says so instead of claiming a check that cannot exist. What it
+can verify, it does: a task that is a bare keyword is refused rather than
+scored, and a task whose expected domain claims none of its words is
+reported as a finding about the vocabulary, and kept in the score rather
+than hidden from it.
+
+Four kinds of task, each saying what it can and cannot prove: 30 Arabic
+routing goals, 15 arithmetic answers computed from the arithmetic itself, 8
+questions nobody can know (graded for fabrication by an abstention-marker
+proxy, which is labelled a proxy), and 5 code tasks whose delivered code is
+executed in the sandbox against its own tests. Tasks that need the engine
+are skipped with their reason when it is down, never scored as zero.
+
+The dual-process cascade of section 27.6 is measured instead of assumed:
+`SomEngine` and `LlmClient` report their times and their escalations to a
+`CascadeRecorder`, which computes `q_abstain` (the `q` of
+`E[T] = T1 + q·T2`), `q_llm`, both percentiles, and the expected time.
+`oss-v1 cascade` and `GET /metrics/cascade` expose it; `oss-v1 graded` runs
+the suite.
+
+Measuring the engine tasks, then the suite itself, found four real defects,
+and all four are fixed with the test that would have caught them:
+
+- **a planned file write could never work.** The action engine passed only
+  the step's `target` to every file tool, so `file.write` was called without
+  its `content` argument and every write failed with
+  `missing 1 required positional argument`. The content lives in the step's
+  `detail` and was never passed. The system reported the failure honestly —
+  *"no Python script was created"* — instead of inventing a success.
+  `tests/test_safety_layer.py` now executes a planned write end to end.
+- **a question was graded as an answer.** The decision engine asked the user
+  about an arithmetic prompt, and its question quoted the right number among
+  its options; the grader found that number in the question and scored a
+  pass. Graders now check the status before looking for any number.
+- **the engine timeout was a constant in the client.** On the Lite tier
+  `t2_p95` sat at 120,029 ms — the old timeout, to the millisecond — and 15
+  of 56 calls (27 %) were lost to it. The timeout now follows the device
+  tier, and the `Settings.engine_timeout` that nothing had ever read is
+  wired into the engine.
+- **the audit log broke under ordinary use, and hid what it should have
+  caught.** Three faults, found because the API tests went red against a
+  chain that really was broken at entry 96: the log's path was a fixed
+  relative one, so it ignored `OSS_V1_DATA_DIR` and left the audit trail
+  behind in the working directory while the rest of the state moved;
+  each writer took its `previous` hash from its own memory, so two writers
+  appending at once produced entries whose `prev` matched nothing — the
+  exact signature the chain exists to detect for tampering, produced by
+  normal use; and a line that did not parse was skipped silently, so
+  destroying the last entry of a log went unreported. The path now follows
+  the data directory (an explicit override still wins), appends and reads
+  take an exclusive lock and chain to the tail actually on disk, and an
+  unreadable line is reported as damage. The tamper detection itself worked
+  correctly the whole time — it found the real break.
+
 ### The thirteen qualities and their models
 
 The specification of section 27 asks for each ambition to become a model

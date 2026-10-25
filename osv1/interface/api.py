@@ -259,6 +259,12 @@ def metrics() -> dict[str, Any]:
     return {"reports": RUNTIME.metrics.as_reports(), "som": RUNTIME.som.stats()}
 
 
+@app.get("/metrics/cascade")
+def metrics_cascade() -> dict[str, Any]:
+    """The dual-process cascade of section 27.6, measured on this runtime."""
+    return RUNTIME.cascade.report()
+
+
 @app.get("/catalog")
 def catalog() -> dict[str, Any]:
     return REGISTRY.catalog()

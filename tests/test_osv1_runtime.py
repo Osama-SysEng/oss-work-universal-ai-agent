@@ -13,6 +13,19 @@ from osv1.runtime import OSRuntime
 @pytest.fixture()
 def runtime(tmp_path: Path, monkeypatch) -> OSRuntime:
     monkeypatch.chdir(tmp_path)
+    # Own every state path, don't inherit the session's. The kill switch and
+    # the audit log follow the data directory now (they used to be fixed
+    # relative paths), so a test that engages the switch would otherwise
+    # block the tests that follow it — they shared one data directory.
+    monkeypatch.setenv("OSS_V1_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("OSS_V1_WORKSPACE_DIR", str(tmp_path / "workspace"))
+    monkeypatch.setenv("OSS_V1_SKILLS_DIR", str(tmp_path / "skills"))
+    # Point the engine at a port nothing listens on, so these tests exercise
+    # the guaranteed path instead of depending on whether a local model is
+    # running. They used to pass only while the engine was down: with one up,
+    # the decision engine asked the user and no plan was produced. The graded
+    # suite is what measures the engine, on purpose, elsewhere.
+    monkeypatch.setenv("OSS_LOCAL_URL", "http://127.0.0.1:1")
     return OSRuntime()
 
 

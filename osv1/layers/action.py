@@ -26,6 +26,31 @@ from osv1.layers.world_model import WorldModel
 from osv1.safety.permissions import SCOPE_FILES, SCOPE_IRREVERSIBLE, SCOPE_NETWORK, SCOPE_PROGRAMS
 from osv1.tools.registry import RISK_IRREVERSIBLE, ToolResult
 
+# Tools whose arguments all come from the step's target. A step that names no
+# target for one of these is a malformed plan, and is reported as such instead
+# of surfacing as a TypeError about an argument the plan schema has no field
+# for — or as a permission error, which would blame the wrong thing.
+NEEDS_TARGET = frozenset(
+    {
+        "file.read",
+        "file.list",
+        "file.write",
+        "file.move",
+        "file.delete",
+        "sheet.read",
+        "sheet.summarize",
+        "sheet.write_csv",
+        "dashboard.build",
+        "format.analyze",
+        "format.synthesize",
+        "office.write",
+        "office.read",
+        "web.read",
+        "rea.analyze",
+        "program.run",
+    }
+)
+
 TOOL_SCOPE = {
     "file.list": SCOPE_FILES,
     "file.read": SCOPE_FILES,
@@ -137,6 +162,21 @@ class ActionEngine:
                 )
                 continue
 
+            if step.tool in NEEDS_TARGET and not (step.target or "").strip():
+                # Checked before permissions on purpose: a step that names no
+                # target is a malformed plan, and reporting it as "no grant
+                # covers this target" would send the operator to the wrong fix.
+                self.actions.append(
+                    ActionRecord(
+                        action=step.action,
+                        tool=step.tool,
+                        target=step.target,
+                        outcome="failed",
+                        detail=f"the plan step names no target for {step.tool}: it reads {step.action!r}",
+                    )
+                )
+                continue
+
             tool = context.tools.tool(step.tool)
             scope = self._scope_for(step)
             target = self._target_for(step)
@@ -231,8 +271,15 @@ class ActionEngine:
 
     def _run_tool(self, step: PlanStep) -> ToolResult:
         arguments: dict[str, Any] = {}
-        if step.tool in ("file.read", "file.list", "file.write", "file.move", "file.delete"):
+        if step.tool in ("file.read", "file.list", "file.move", "file.delete"):
             arguments["path"] = step.target
+        elif step.tool == "file.write":
+            # The content of a write lives in the step's detail. This branch
+            # used to share the path-only group above, so every planned write
+            # failed with "missing ... 'content'" — writing a file from a plan
+            # could never work.
+            arguments["path"] = step.target
+            arguments["content"] = step.detail or ""
         elif step.tool == "file.search":
             arguments["pattern"] = step.detail or step.target or "."
             arguments["root"] = step.target or None
@@ -249,6 +296,8 @@ class ActionEngine:
             arguments["source"] = source
             arguments["filename"] = filename
         elif step.tool == "code.run":
+            if not (step.detail or "").strip():
+                return ToolResult(ok=False, error="the plan step has no code to run")
             arguments["code"] = step.detail
         elif step.tool in ("sheet.read", "sheet.summarize"):
             arguments["path"] = step.target

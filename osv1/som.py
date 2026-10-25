@@ -26,6 +26,7 @@ import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Any, Protocol
 
 from osv1.calibration import Calibrator
@@ -376,8 +377,10 @@ class SomEngine:
     calibrator: Calibrator = field(default_factory=Calibrator)
     abstain_threshold: float = 0.6
     log: list[dict[str, Any]] = field(default_factory=list)
+    recorder: Any = None  # osv1.eval.cascade.CascadeRecorder | None
 
     def ask(self, question: SomQuestion, *, record: bool = True) -> SomDecision:
+        started = perf_counter()
         decision = self.backend.answer(question)
         if decision.abstained and self.backend is not self.fallback:
             fallback_decision = self.fallback.answer(question)
@@ -400,6 +403,10 @@ class SomEngine:
             )
         if record:
             self.log.append(decision.as_dict())
+        # The cascade of section 27.6 is measured, not assumed: every call
+        # reports how long the fast path took and whether it escalated.
+        if self.recorder is not None:
+            self.recorder.record_som((perf_counter() - started) * 1000.0, abstained=decision.abstained)
         return decision
 
     def _calibrate(self, decision: SomDecision) -> SomDecision:
@@ -455,6 +462,7 @@ def build_som(
     laya_model: str = "",
     abstain_threshold: float = 0.6,
     calibrator: Calibrator | None = None,
+    recorder: Any = None,
 ) -> SomEngine:
     """Build System One, preferring a local Laya checkpoint when one is served."""
     rule = RuleBackend()
@@ -468,6 +476,7 @@ def build_som(
         fallback=rule,
         calibrator=calibrator or Calibrator(),
         abstain_threshold=abstain_threshold,
+        recorder=recorder,
     )
 
 

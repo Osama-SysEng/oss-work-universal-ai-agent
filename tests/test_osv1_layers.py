@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-from osv1.contracts import UnifiedInput
-from osv1.layers.context import LayerContext
-from osv1.layers.decision import DecisionEngine
-from osv1.layers.input_layer import InputLayer
-from osv1.layers.reasoning import ReasoningEngine
-from osv1.layers.world_model import WorldModel
-from osv1.tools.code_tools import CodeTools
-from osv1.tools.file_tools import FileTools
-from osv1.tools.registry import ToolRegistry
+# Hermetic, for the same reason as the API and runtime tests: these layers
+# are checked against behaviour the system guarantees, and a local model that
+# happens to be running would answer differently and change the outcome.
+os.environ.setdefault("OSS_LOCAL_URL", "http://127.0.0.1:1")
+
+from osv1.contracts import UnifiedInput  # noqa: E402
+from osv1.layers.context import LayerContext  # noqa: E402
+from osv1.layers.decision import DecisionEngine  # noqa: E402
+from osv1.layers.input_layer import InputLayer  # noqa: E402
+from osv1.layers.reasoning import ReasoningEngine  # noqa: E402
+from osv1.layers.world_model import WorldModel  # noqa: E402
+from osv1.tools.code_tools import CodeTools  # noqa: E402
+from osv1.tools.file_tools import FileTools  # noqa: E402
+from osv1.tools.registry import ToolRegistry  # noqa: E402
 
 
 def _context(tmp_path: Path) -> LayerContext:

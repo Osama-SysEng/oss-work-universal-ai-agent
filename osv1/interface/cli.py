@@ -211,6 +211,36 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     return 0 if report["suites_passed"] == report["suites_total"] else 1
 
 
+def cmd_cascade(args: argparse.Namespace) -> int:
+    """The dual-process cascade: T1, T2, q, and E[T], all measured."""
+    report = runtime().cascade.report()
+    _print(report)
+    return 0
+
+
+def cmd_graded(args: argparse.Namespace) -> int:
+    """Run the held-out suite: routing, mathematics, honesty, and code."""
+    from osv1.eval.graded import GradedSuite
+
+    report = GradedSuite(project_root=Path.cwd()).run(limit_engine=args.limit)
+    _print(
+        {
+            "score": report["score"],
+            "graded": report["graded"],
+            "ci95": report["ci95"],
+            "per_kind": report["per_kind"],
+            "engine": report["engine"],
+            "cascade": {
+                key: report["cascade"][key]
+                for key in ("q_abstain", "q_llm", "t1_p50_ms", "t2_p50_ms", "expected_time_ms")
+            },
+            "held_out": {key: report["held_out"][key] for key in ("held_out", "trivial")},
+            "skipped": len(report["skipped"]),
+        }
+    )
+    return 0 if report["graded"] else 1
+
+
 def cmd_context(args: argparse.Namespace) -> int:
     """Show how a text would fit in the context window of this device tier."""
     from osv1.context import ContextWindow, estimate_tokens
@@ -362,6 +392,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     evaluate = sub.add_parser("evaluate", help="run the evaluation harness")
     evaluate.set_defaults(func=cmd_evaluate)
+
+    cascade = sub.add_parser("cascade", help="the dual-process cascade, measured")
+    cascade.set_defaults(func=cmd_cascade)
+
+    graded = sub.add_parser("graded", help="the held-out suite: routing, math, honesty, code")
+    graded.add_argument("--limit", type=int, default=0, help="at most this many engine tasks (0 = all)")
+    graded.set_defaults(func=cmd_graded)
 
     qualities = sub.add_parser("qualities", help="the thirteen qualities and their models")
     qualities.add_argument("--report", action="store_true", help="what is measured today")

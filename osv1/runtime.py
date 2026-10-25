@@ -62,11 +62,24 @@ class OSRuntime:
 
     def __post_init__(self) -> None:
         self.settings.ensure_dirs()
-        self.engine = LlmClient()
+        # The cascade of section 27.6 is measured on this runtime: every SOM
+        # decision and every model call reports its time and its escalation.
+        from osv1.engine.local_engine import LocalEngine
+        from osv1.eval.cascade import CascadeRecorder
+
+        self.cascade = CascadeRecorder()
+        # The engine's timeout comes from the tier's settings, not from a
+        # constant in the client: a CPU-served model on the Lite tier was
+        # measured timing out on 27 % of its calls at the old 120 seconds.
+        self.engine = LlmClient(
+            engine=LocalEngine(timeout=self.settings.engine_timeout),
+            recorder=self.cascade,
+        )
         self.som = build_som(
             engine=self.engine,
             laya_model=self.settings.laya_model,
             abstain_threshold=self.settings.som_abstain_threshold,
+            recorder=self.cascade,
         )
         self.memory = MemoryStore(path=self.settings.memory_db_path, user_id=self.user_id)
         self.permissions = PermissionStore(path=self.settings.data_dir / "permissions.json").load()
@@ -350,6 +363,7 @@ class OSRuntime:
             "kill_switch": self.kill_switch.status(),
             "audit": self.audit.verify_chain(),
             "som": self.som.stats(),
+            "cascade": self.cascade.report(),
             "provenance": self.provenance.report(),
             "tiers": {key: tier.note for key, tier in DEVICE_TIERS.items()},
         }

@@ -15,6 +15,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from osv1.engine.local_engine import LocalEngine, LocalEngineError
@@ -28,6 +29,7 @@ class LlmClient:
 
     engine: LocalEngine = field(default_factory=LocalEngine)
     max_tokens: int = 800
+    recorder: Any = None  # osv1.eval.cascade.CascadeRecorder | None
 
     # ── health ────────────────────────────────────────────────
 
@@ -45,10 +47,15 @@ class LlmClient:
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
+        started = perf_counter()
         try:
             result = self.engine.chat(messages, max_tokens=max_tokens or self.max_tokens)
         except LocalEngineError as exc:
+            if self.recorder is not None:
+                self.recorder.record_llm((perf_counter() - started) * 1000.0, ok=False)
             return {"content": "", "source": "unavailable", "error": str(exc), "model": self.engine.model_label}
+        if self.recorder is not None:
+            self.recorder.record_llm((perf_counter() - started) * 1000.0, ok=True)
         return {"content": result["content"], "source": "local_engine", "model": result["model"]}
 
     def json_complete(self, prompt: str, *, system: str = "", max_tokens: int | None = None) -> tuple[Any, str]:

@@ -262,6 +262,65 @@ class Harness:
 
     # ── the report ────────────────────────────────────────────
 
+    def _graded_snapshot(self) -> dict[str, Any] | None:
+        """The last held-out run, when one has been saved.
+
+        The suite needs the local engine, so its report is a snapshot rather
+        than something this harness can produce on demand. A snapshot that is
+        missing is reported as missing, never as zero.
+        """
+        path = self.project_root / "data-osv1" / "graded-evaluation.json"
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(data, dict) or not data.get("graded"):
+            return None
+        return data
+
+    @staticmethod
+    def _qualities_from_graded(graded: dict[str, Any]) -> dict[str, Any]:
+        """Turn a held-out snapshot into the qualities it actually measures."""
+        model = (graded.get("engine") or {}).get("model", "unknown")
+        per_kind = graded.get("per_kind", {})
+        cascade = graded.get("cascade", {})
+        measured: dict[str, Any] = {
+            "intelligence": {
+                "metric": "score on the held-out suite (routing, arithmetic, honesty, code)",
+                "value": graded.get("score"),
+                "ci95": graded.get("ci95"),
+                "samples": graded.get("graded"),
+                "model": model,
+            },
+            "human-mind": {
+                "metric": "the cascade of section 27.6: q, T1, T2, and E[T]",
+                "q_abstain": cascade.get("q_abstain"),
+                "q_llm": cascade.get("q_llm"),
+                "t1_p50_ms": cascade.get("t1_p50_ms"),
+                "t2_p50_ms": cascade.get("t2_p50_ms"),
+                "expected_time_ms": cascade.get("expected_time_ms"),
+                "samples": cascade.get("som_decisions"),
+                "model": model,
+            },
+            "absolute-knowledge": {
+                "metric": "answers that did not fabricate on questions nobody can know",
+                "value": (per_kind.get("gap") or {}).get("score"),
+                "samples": (per_kind.get("gap") or {}).get("samples"),
+                "model": model,
+                "note": "graded by abstention markers, which is a proxy rather than a judgement",
+            },
+        }
+        routing = per_kind.get("arabic_routing")
+        if routing:
+            measured["intelligence"]["routing"] = {
+                "value": routing["score"],
+                "samples": routing["samples"],
+                "note": "Arabic goals written from the domain definitions, never from the router",
+            }
+        return measured
+
     def quality_report(self) -> dict[str, Any]:
         """The thirteen qualities: what is measured, and what is still a target.
 
@@ -305,6 +364,9 @@ class Harness:
                 "note": "measured per synthesis run, not by the suite",
             },
         }
+        graded = self._graded_snapshot()
+        if graded is not None:
+            measured.update(self._qualities_from_graded(graded))
         targets = {quality.key: quality.test for quality in QUALITIES if quality.key not in measured}
         notes = [
             "a quality with a number is measured; everything else is a target",

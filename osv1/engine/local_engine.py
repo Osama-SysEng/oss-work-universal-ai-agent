@@ -44,14 +44,24 @@ class LocalEngine:
             return False
 
     def models(self) -> list[dict[str, Any]]:
-        """Model ids the engine reports, when it reports any."""
+        """Model ids the engine reports, when it reports any.
+
+        llama.cpp answers with ``models`` and OpenAI-compatible servers with
+        ``data``; both are read, because a measurement that names its model
+        has to get the name from whichever shape the server speaks.
+        """
         try:
             response = httpx.get(f"{self.base_url}/v1/models", timeout=5)
             response.raise_for_status()
-            data = response.json()
+            payload = response.json()
         except (httpx.HTTPError, ValueError, KeyError):
             return []
-        return [m for m in data.get("data", []) if isinstance(m, dict)]
+        if not isinstance(payload, dict):
+            return []
+        raw = payload.get("data") if isinstance(payload.get("data"), list) else payload.get("models")
+        if not isinstance(raw, list):
+            return []
+        return [entry for entry in raw if isinstance(entry, dict)]
 
     def chat(self, messages: list[dict[str, str]], max_tokens: int = 512) -> dict[str, Any]:
         """Chat completion. Returns ``{"content", "model"}``; raises when down."""
@@ -71,9 +81,26 @@ class LocalEngine:
             ) from exc
 
     def describe(self) -> dict[str, Any]:
+        """What the engine is, as the engine reports it.
+
+        The label is what the operator configured; the id below is what the
+        server says it is serving. A measurement that names its model has to
+        name it from the source, not from an environment variable, so the
+        reported id wins and the label is kept beside it.
+        """
+        reported = ""
+        for entry in self.models():
+            identifier = entry.get("id") or entry.get("name")
+            if isinstance(identifier, str) and identifier.strip():
+                # The server may report a whole path; the file name is the
+                # model's identity, and the path is the operator's machine.
+                reported = identifier.strip().replace("\\", "/").rsplit("/", 1)[-1]
+                break
         return {
             "base_url": self.base_url,
-            "model": self.model_label,
+            "model": reported or self.model_label,
+            "model_label": self.model_label,
+            "reported_by_engine": bool(reported),
             "timeout_s": self.timeout,
             "healthy": self.health(),
         }

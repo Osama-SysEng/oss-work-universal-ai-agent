@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from osv1.context import ChunkStore, ContextWindow, estimate_tokens, split_sentences
 
 
@@ -55,6 +57,49 @@ def test_the_window_comes_from_the_device_tier() -> None:
 
     settings = Settings.load()
     assert settings.context_tokens == DEVICE_TIERS[settings.tier].context_tokens
+
+
+def test_the_inference_timeout_belongs_to_the_tier() -> None:
+    """A CPU-served model needs longer than a GPU one.
+
+    The Lite tier measured 27 % of its calls timing out at the old fixed
+    120 seconds, with p95 sitting exactly on that limit
+    (docs/EVALUATION.md), so the timeout follows the hardware.
+    """
+    from osv1.config import DEVICE_TIERS
+
+    assert DEVICE_TIERS["lite"].inference_timeout_s > DEVICE_TIERS["standard"].inference_timeout_s
+    assert DEVICE_TIERS["standard"].inference_timeout_s > DEVICE_TIERS["pro"].inference_timeout_s
+    for tier in DEVICE_TIERS.values():
+        assert tier.inference_timeout_s > 0
+
+
+def test_settings_take_the_timeout_of_their_tier(monkeypatch: pytest.MonkeyPatch) -> None:
+    from osv1.config import DEVICE_TIERS, Settings
+
+    monkeypatch.delenv("OSS_LOCAL_TIMEOUT", raising=False)
+    monkeypatch.setenv("OSS_V1_TIER", "lite")
+    settings = Settings.load()
+    assert settings.engine_timeout == DEVICE_TIERS["lite"].inference_timeout_s
+
+
+def test_an_explicit_timeout_is_never_overwritten(monkeypatch: pytest.MonkeyPatch) -> None:
+    from osv1.config import Settings
+
+    monkeypatch.setenv("OSS_LOCAL_TIMEOUT", "42")
+    monkeypatch.setenv("OSS_V1_TIER", "lite")
+    assert Settings.load().engine_timeout == 42.0
+
+
+def test_the_engine_is_built_with_the_settings_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    from osv1.config import Settings
+    from osv1.runtime import OSRuntime
+
+    monkeypatch.delenv("OSS_LOCAL_TIMEOUT", raising=False)
+    monkeypatch.setenv("OSS_V1_TIER", "lite")
+    runtime = OSRuntime()
+    assert runtime.engine.engine.timeout == runtime.settings.engine_timeout
+    assert runtime.engine.engine.timeout == 300.0
 
 
 def test_the_chunk_store_resumes_an_interrupted_generation(tmp_path: Path) -> None:

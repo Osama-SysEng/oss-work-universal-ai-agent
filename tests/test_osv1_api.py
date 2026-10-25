@@ -11,6 +11,14 @@ os.environ.setdefault("OSS_V1_DATA_DIR", tempfile.mkdtemp(prefix="osv1-api-data-
 os.environ.setdefault("OSS_V1_WORKSPACE_DIR", tempfile.mkdtemp(prefix="osv1-api-ws-"))
 os.environ.setdefault("OSS_V1_SKILLS_DIR", tempfile.mkdtemp(prefix="osv1-api-skills-"))
 
+# These tests check the endpoints against a known state of the system, so the
+# engine is pointed at a port nothing listens on. Without this the suite's
+# result depended on whether a local model happened to be running: with one up,
+# the decision engine asked the user instead of deciding and three tests here
+# failed. A test that passes only while its dependency is down is not a test —
+# the graded suite is what measures the engine, deliberately and separately.
+os.environ.setdefault("OSS_LOCAL_URL", "http://127.0.0.1:1")
+
 from fastapi.testclient import TestClient  # noqa: E402
 
 from osv1.interface.api import app  # noqa: E402

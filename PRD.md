@@ -52,6 +52,7 @@ python -m osv1.interface.api        # الواجهة الحية على http://12
 | GET | `/context` | نافذة السياق حسب فئة الجهاز | 200 |
 | GET | `/qualities` | الصفات الثلاث عشرة: القانون والقاعدة والاختبار | 200 |
 | GET | `/qualities/report` | ما هو مقيس اليوم وما يبقى هدفاً | 200 |
+| GET | `/metrics/cascade` | التصعيد المتدرج: T1 وT2 وq وE[T] كلها مقيسة | 200 |
 
 **قواعد التحقق:** `task` بين حرفين و10.000 حرف · `agent_id` اختياري · `limit` بين 1 و500 · `scope` من: `files`, `network`, `programs`, `irreversible` · `kind` من: `model`, `dataset`, `tool`, `dependency`, `skill`.
 
@@ -59,7 +60,7 @@ python -m osv1.interface.api        # الواجهة الحية على http://12
 
 `oss-v1 <command>`:
 
-`plan` · `build` · `agents` · `agent` · `status` · `memory` · `audit` · `grant` · `revoke` · `approvals` · `kill` · `metrics` · `provenance` · `evaluate` · `qualities` · `context` · `practice` · `weekly` · `serve` · `version`
+`plan` · `build` · `agents` · `agent` · `status` · `memory` · `audit` · `grant` · `revoke` · `approvals` · `kill` · `metrics` · `provenance` · `evaluate` · `qualities` · `cascade` · `graded` · `context` · `practice` · `weekly` · `serve` · `version`
 
 ## 4. الوكلاء الـ300
 

@@ -54,6 +54,11 @@ class DeviceTier:
     min_ram_gb: int
     vram_gb: int
     note: str
+    # How long one inference call may take on this hardware. A CPU-served
+    # model needs far longer than a GPU one, and a fixed 120-second default
+    # measured at 27 % timeouts on the Lite tier (docs/EVALUATION.md) — so
+    # the timeout belongs to the tier, not to the code.
+    inference_timeout_s: float = 120.0
 
 
 DEVICE_TIERS: dict[str, DeviceTier] = {
@@ -64,6 +69,7 @@ DEVICE_TIERS: dict[str, DeviceTier] = {
         min_ram_gb=16,
         vram_gb=0,
         note="16 GB RAM, no GPU, small quantized models.",
+        inference_timeout_s=300.0,
     ),
     "standard": DeviceTier(
         key="standard",
@@ -72,6 +78,7 @@ DEVICE_TIERS: dict[str, DeviceTier] = {
         min_ram_gb=32,
         vram_gb=12,
         note="32 GB RAM, 12-16 GB VRAM GPU.",
+        inference_timeout_s=120.0,
     ),
     "pro": DeviceTier(
         key="pro",
@@ -80,6 +87,7 @@ DEVICE_TIERS: dict[str, DeviceTier] = {
         min_ram_gb=64,
         vram_gb=24,
         note="64 GB RAM, 24 GB+ VRAM GPU, or a user-owned server.",
+        inference_timeout_s=60.0,
     ),
 }
 
@@ -161,6 +169,22 @@ class Settings:
         settings = cls()
         if not settings.context_tokens:
             settings.context_tokens = DEVICE_TIERS[settings.tier].context_tokens
+        # The inference timeout follows the tier's hardware, unless the
+        # operator set OSS_LOCAL_TIMEOUT — an explicit setting is theirs and
+        # is never overwritten. `engine_timeout` was defined but never used
+        # before this; wiring it here is what makes it a setting at all.
+        if not os.getenv("OSS_LOCAL_TIMEOUT"):
+            settings.engine_timeout = DEVICE_TIERS[settings.tier].inference_timeout_s
+        # The audit log and the kill switch live with the rest of the data.
+        # They were fixed relative paths, so pointing OSS_V1_DATA_DIR
+        # elsewhere moved the memory and the permissions while the audit
+        # trail and the stop file stayed behind in the working directory —
+        # the state an operator most needs to find, in the place they would
+        # never look. An explicit override still wins.
+        if not os.getenv("OSS_V1_AUDIT_LOG"):
+            settings.audit_log = settings.data_dir / "audit.log"
+        if not os.getenv("OSS_V1_KILL_SWITCH"):
+            settings.kill_switch_file = settings.data_dir / "kill.switch"
         return settings
 
     # ── Derived paths ─────────────────────────────────────────────

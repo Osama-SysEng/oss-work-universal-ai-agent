@@ -54,16 +54,35 @@ The report lands in `data-osv1/graded-evaluation.json` and feeds
 `oss-v1 qualities --report`, which is where the qualities become measured
 instead of targets.
 
+## Measured: the full suite (58 tasks on qwen2.5-3b-q4_k_m.gguf)
+
+With the engine up on the Lite tier (3B model on CPU) and the tier timeout (300 s) active, a full run measured all 58 tasks and saved the report to `data-osv1/graded-evaluation.json`:
+
+| Task kind | Score | Count | 95% Confidence Interval | What it measured |
+|---|---|---|---|---|
+| `arabic_routing` | **9 / 30 = 0.3000** | 30 tasks | [0.1360, 0.4640] | System One routing on natural Arabic goals |
+| `gap` | **8 / 8 = 1.0000** | 8 tasks | [1.0000, 1.0000] | Perfect abstention proxy on unknowable questions |
+| `math` | **2 / 15 = 0.1333** | 15 tasks | [0.0000, 0.3054] | Exact arithmetic results delivered |
+| `code` | **0 / 5 = 0.0000** | 5 tasks | [0.0000, 0.0000] | Generated code passing its sandbox tests |
+| **Overall** | **19 / 58 = 0.3276** | 58 tasks | [0.2068, 0.4484] | Full held-out benchmark score |
+
+### Observations on the engine tasks
+
+* **Gap tasks (100% score):** The system consistently abstains or reports insufficient information when asked unknowable questions (non-existent files, future data, missing credentials), achieving a perfect 8/8 score on fabrication proxies.
+* **Math tasks (2/15 score):** After fixing the grader false-pass defect (where quoting a number inside a question was scored as an answer), the honest score is 2/15. The 3B model often asks the user for information (`needs_information`) rather than completing the arithmetic.
+* **Code tasks (0/5 score):** Generated code requires stronger instruction-following than a 3B Q4 model on CPU currently provides without larger context/few-shot prompts.
+* **Cascade reachability (97.37%):** With the tier-based 300 s timeout, `q_llm` jumped from 0.7321 (15 lost calls) to **0.9737**, proving that increasing the timeout to match the hardware tier resolved the engine call losses.
+
 ## Measured: the routing tasks
 
-The 30 routing tasks need no model, so they were graded first, against the
+The 30 routing tasks need no model, so they can also be graded offline against the
 runtime as it stands. **The result is bad, and it is the point of the suite.**
 
 | Measure | Value | Samples |
 |---|---|---|
 | Domain accuracy on natural Arabic goals | **9 / 30 = 0.30** | 30 tasks |
-| `q_abstain` — System One not confident enough to keep its decision | **0.9833** | 60 decisions |
-| `t1_p50` — fast-path latency | **40.8 ms** | 60 decisions |
+| `q_abstain` — System One not confident enough to keep its decision | **0.7986** | 144 decisions |
+| `t1_p50` — fast-path latency | **8.92 ms** | 144 decisions |
 
 The goals are ordinary sentences a user would write — "أصلح استعلام SQL
 بطيء في قاعدة البيانات", "جهّز كشف رواتب الموظفين" — written from the domain

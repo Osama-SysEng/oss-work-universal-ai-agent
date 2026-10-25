@@ -416,6 +416,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Force UTF-8 stdout/stderr on Windows to avoid UnicodeEncodeError
+    if sys.platform == "win32":
+        import codecs
+
+        sys.stdout = codecs.getwriter("utf-8")(sys.stdout.buffer)
+        sys.stderr = codecs.getwriter("utf-8")(sys.stderr.buffer)
     parser = build_parser()
     args = parser.parse_args(argv)
     return int(args.func(args) or 0)

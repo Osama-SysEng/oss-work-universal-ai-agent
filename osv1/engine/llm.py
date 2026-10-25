@@ -28,7 +28,8 @@ class LlmClient:
     """Wraps the local engine with the structured prompts the layers need."""
 
     engine: LocalEngine = field(default_factory=LocalEngine)
-    max_tokens: int = 800
+    max_tokens: int = 512
+    temperature: float = 0.0
     recorder: Any = None  # osv1.eval.cascade.CascadeRecorder | None
 
     # ── health ────────────────────────────────────────────────
@@ -49,7 +50,11 @@ class LlmClient:
         messages.append({"role": "user", "content": prompt})
         started = perf_counter()
         try:
-            result = self.engine.chat(messages, max_tokens=max_tokens or self.max_tokens)
+            result = self.engine.chat(
+                messages,
+                max_tokens=max_tokens or self.max_tokens,
+                temperature=self.temperature,
+            )
         except LocalEngineError as exc:
             if self.recorder is not None:
                 self.recorder.record_llm((perf_counter() - started) * 1000.0, ok=False)

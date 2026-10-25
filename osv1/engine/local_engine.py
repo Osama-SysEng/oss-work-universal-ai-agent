@@ -63,12 +63,12 @@ class LocalEngine:
             return []
         return [entry for entry in raw if isinstance(entry, dict)]
 
-    def chat(self, messages: list[dict[str, str]], max_tokens: int = 512) -> dict[str, Any]:
+    def chat(self, messages: list[dict[str, str]], max_tokens: int = 512, temperature: float = 0.0) -> dict[str, Any]:
         """Chat completion. Returns ``{"content", "model"}``; raises when down."""
         try:
             response = httpx.post(
                 f"{self.base_url}/v1/chat/completions",
-                json={"messages": messages, "max_tokens": max_tokens, "stream": False},
+                json={"messages": messages, "max_tokens": max_tokens, "temperature": temperature, "stream": False},
                 timeout=self.timeout,
             )
             response.raise_for_status()

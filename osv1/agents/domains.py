@@ -44,6 +44,24 @@ SHEET_TOOLS = ("sheet.read", "sheet.summarize", "sheet.write_csv", "dashboard.bu
 DOC_TOOLS = ("office.write", "office.read", "office.deck")
 WEB_TOOLS = ("web.read",)
 REVERSE_TOOLS = ("rea.analyze",)
+REVERSE_KEYWORDS = (
+    "reverse",
+    "reverse-engineer",
+    "decompile",
+    "disassemble",
+    "hopper",
+    "ghidra",
+    "ida",
+    "binary",
+    "app",
+    "electron",
+    "apk",
+    "android",
+    "firmware",
+    "binwalk",
+    "jadx",
+    "static-analysis",
+)
 
 
 DOMAINS: tuple[Domain, ...] = (

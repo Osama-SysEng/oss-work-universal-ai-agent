@@ -34,7 +34,9 @@ from typing import Any
 
 from osv1.tools.registry import RISK_READ, Tool, ToolResult
 
-PINNED_REA_VERSION = "0.4.0"  # spec section 13: pin an exact version
+PINNED_REA_VERSION = (
+    "6.7.0"  # spec section 13: pin an exact version; updated 2026-10-25 to match installed rea-agents@6.7.0
+)
 REA_REPOSITORY = "https://github.com/morluto/rea"
 DEFAULT_BINARY_ENGINE = "ghidra"  # spec section 13: Ghidra is the default
 COMMERCIAL_ENGINES = ("hopper", "ida", "jeb")  # only with the user's own licence
@@ -89,7 +91,7 @@ class ReaEngine:
             return False, (
                 "REA is not installed locally. Set OSS_REA_PATH to the pinned checkout "
                 f"of {REA_REPOSITORY} (expected version {PINNED_REA_VERSION}); "
-                "the built-in analyzer still reports structure for text and source targets."
+                "the built-in analyzer still reports structure for text and source targets. With REA installed, the agent can reverse-engineer native binaries (Hopper, Ghidra, IDA), JavaScript/Electron apps, .NET assemblies, SQLite databases, Android APKs, websites, GPU code objects, Go/Rust binaries, WASM, EVM bytecode, and firmware."
             )
         if not Path(self.rea_path).is_dir():
             return False, f"OSS_REA_PATH does not point to a directory: {self.rea_path}"

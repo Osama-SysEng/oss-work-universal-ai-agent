@@ -34,7 +34,8 @@ _DECOMPOSE_PROMPT = (
     "(المسار لا يرى المهمة الأصلية ولا مسارات أخرى).\n\n"
     "المهمة:\n{task}\n\n"
     "أعد JSON فقط بهذا الشكل بالضبط (بلا أي نص خارج الكود):\n"
-    '{{"streams": [{{"name": "اسم-لاتيني-قصير", "task": "المهمة الكاملة للمسار"}},'
+    '{{"streams": [{{"name": "اسم-لاتيني-قصير", "task": "المهمة الكاملة للمسار", '
+    '"files": ["أسماء_الملفات_التي_سينتجها_هذا_المسار"]}},'
     ' ...]}}\n'
     "وإن كانت المهمة بسيطة لا تُقسم عملياً إلى عمل متوازٍ حقيقي، أعد: "
     '{{"streams": []}}')
@@ -46,6 +47,40 @@ _MERGE_PROMPT = (
     "ملف نُتج حرفياً، وأي تحذير (⚠️) أو فشل يُروى كما هو — منعٌ باتاً إخفاء "
     "عطل أو ادعاء عمل لم يُجرَ.\n\n"
     "الملفات الموجودة فعلياً على القرص (لا تدّعي ملفاً خارجها ولا تنقص منها):\n{files}\n\n{reports}")
+
+
+def ws_behavior_errors(ws: Path, since: float = 0.0) -> list[str]:
+    """Behavioral verify gate: test files written this run are EXECUTED.
+    Compiling-but-wrong code used to pass the syntax gate — behavior is the
+    real truth. Returns one entry per failing test file (stderr tail).
+    المصدر هو الحقيقة: __pycache__ يُمسح قبل الحكم — إصلاح بنفس الحجم
+    وبنفس الثانية كان يقرأ كاشاً قديماً فينجّي المنطق الخاطئ (قياس حي)."""
+    for cache in list(ws.rglob("__pycache__")):
+        import shutil
+        shutil.rmtree(cache, ignore_errors=True)
+    errs = []
+    pats = ("test_*.py", "*_test.py")
+    seen = set()
+    for pat in pats:
+        for tf in sorted(ws.rglob(pat)):
+            if tf in seen:
+                continue
+            seen.add(tf)
+            try:
+                if since and tf.stat().st_mtime < since - 5:
+                    continue
+            except OSError:
+                continue
+            try:
+                r = subprocess.run([sys.executable, str(tf)], cwd=str(ws),
+                                   capture_output=True, timeout=120, check=False)
+                if r.returncode:
+                    tail = r.stdout.decode("utf-8", "replace").strip()[-250:]
+                    tail += " || " + r.stderr.decode("utf-8", "replace").strip()[-250:]
+                    errs.append(f"{tf.name}: {tail}")
+            except Exception as exc:  # noqa: BLE001 — gate must never crash serving
+                errs.append(f"{tf.name}: {type(exc).__name__}: {exc}")
+    return errs
 
 
 def _chat(chain: list[dict], msgs: list[dict], max_tokens: int = 2500) -> str:
@@ -88,9 +123,14 @@ def decompose(task: str, chain: list[dict]) -> list[dict] | None:
     for st in obj["streams"][:MAX_STREAMS]:
         if (isinstance(st, dict) and str(st.get("name", "")).strip()
                 and str(st.get("task", "")).strip()):
+            fl = st.get("files")
+            files = ([re.sub(r"[^a-zA-Z0-9_./-]", "", str(f))[:60]
+                      for f in fl if str(f).strip()]
+                     if isinstance(fl, list) else [])
             streams.append({"name": re.sub(r"[^a-zA-Z0-9_-]", "",
                                            str(st["name"]))[:20] or "w",
-                            "task": str(st["task"]).strip()})
+                            "task": str(st["task"]).strip(),
+                            "files": files})
     return streams
 
 
@@ -177,7 +217,8 @@ def run_team(task: str, root_ws: Path, session_id: str, chain: list[dict],
                          f"{round(time.time() - t0)} ث"})
 
     # verify gate per worker workspace + ONE bounded heal round (real accuracy)
-    for st, wctx, wfinal, wok in workers:
+    # (indexed: النتائج تُثبَّت في القائمة — جولات الإصلاح يجب أن تصل لتقرير الدمج)
+    for wi, (st, wctx, wfinal, wok) in enumerate(workers):
         errs = ws_py_errors(wctx.workspace)
         healed = False
         if errs:
@@ -194,11 +235,46 @@ def run_team(task: str, root_ws: Path, session_id: str, chain: list[dict],
             if errs2:
                 wfinal += ("\n\n⚠️ ما زالت أخطاء التركيب قائمة بعد الإصلاح: "
                            + " | ".join(e[:150] for e in errs2[:3]))
+
+        # behavioral gate: الاختبارات المكتوبة تُشغَّل فعلاً — كود يُترجم
+        # ونتيجته خاطئة كان يمرّ بلا مساءلة، والآن يُصطاد ويُصلح منطقه
+        berrs = ws_behavior_errors(wctx.workspace) if not errs else []
+        if berrs:
+            say({"type": "status", "stage": "team",
+                 "text": f"🧪 [{st['name']}] بوابة السلوك اصطادت اختباراً "
+                         f"فاشلاً — إصلاح المنطق..."})
+            bfinal, _bok = ag.run_agent(
+                "بوابة السلوك اصطادت اختبارات فاشلة في مساحة عملك — الكود "
+                "يُترجم لكن المنطق خاطئ. أصلح المنطق حتى تنجح الاختبارات فعلاً "
+                "وشغّلها بنفسك للتأكد:\n" + "\n".join(berrs[:3]),
+                wctx, chain, lambda e: None, memory_brief, WORKER_STEPS, 1)
+            if bfinal:
+                wfinal = (wfinal + "\n\n[إصلاح السلوك]: " + bfinal)[:8000]
+            berrs2 = ws_behavior_errors(wctx.workspace)
+            if berrs2:
+                wfinal += ("\n\n⚠️ اختبارات ما زالت تفشل بعد إصلاح السلوك: "
+                           + " | ".join(e[:200] for e in berrs2[:2]))
+            else:
+                healed = True
+
         info = {"name": st["name"], "ok": wok, "steps": len(wctx.steps),
                 "ok_steps": len([s for s in wctx.steps if s.get("ok")]),
                 "tools": [s["tool"] for s in wctx.steps][:12],
-                "healed": healed, "py_errors": len(errs)}
+                "healed": healed, "py_errors": len(errs),
+                "test_errors": len(berrs)}
+
+        # deliverables contract: الملفات الموعودة في خطة التفكيك تُمسح على
+        # القرص — الوعد بلا منتج زور يُفصح عنه إلزاماً
+        missing = [f for f in st.get("files", []) if f
+                   and not list(wctx.workspace.glob(f"**/{f}"))]
+        if missing:
+            wfinal += ("\n\n⚠️ ملفات وُعدت في خطة الفريق لم تُنتَج فعلاً: "
+                       + ", ".join(missing[:5]))
+            wok = False
+            info["missing_files"] = missing
+        info["ok"] = wok
         st["info"] = info
+        workers[wi] = (st, wctx, wfinal, wok)
 
     reports = "\n\n".join(
         f"=== تقرير الوكيل [{st['name']}] ({'نجح' if wok else 'فشل/غير مكتمل'}) ===\n"

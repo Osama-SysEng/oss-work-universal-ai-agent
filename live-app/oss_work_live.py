@@ -864,6 +864,19 @@ def cloud_test(cfg: dict) -> tuple[bool, str]:
         return False, f"فشل الاتصال بالمزود: {exc}"
 
 
+_ANALYTICAL_RX = re.compile(
+    r"(لماذا|كيف|قارن|حلل|اشرح|الفرق|مميزات|عيوب|خطوات|صمم|اقترح|فسر|"
+    r"أفضل|افضل|استراتيجية|خطة|إستراتيجية|ما هي|ماهي|وضح|وضّح)", re.IGNORECASE)
+
+
+def _analytical(message: str) -> bool:
+    """True when a chat question deserves a thinking budget without the user
+    saying a magic keyword: multi-part, long, or explicitly analytical."""
+    m = message or ""
+    return (len(m) > 120 or m.count("؟") + m.count("?") > 1
+            or bool(_ANALYTICAL_RX.search(m)))
+
+
 def cloud_stream(cfg: dict, messages: list[dict], effort: str | None = "none",
                  timeout: int = 300, max_tokens: int = 4000):
     """Yield deltas from the cloud model's SSE stream.
@@ -1442,13 +1455,15 @@ def chat_stream(req: ChatRequest):
             # Reasoning budget by intent — measured trade-offs:
             #   code → "low" (quality where it matters, still fast)
             #   explicit deep analysis → default full thinking
-            #   everything else → "none" (facts don't need a thinking chain)
+            #   analytical/multi-part questions → "low" automatically
+            #     (smarter defaults: no magic keyword required)
+            #   trivial lookups → "none" (facts don't need a thinking chain)
             if code_mode:
                 effort = "low"
             elif ("تحليل أعمق" in message or "تحليل اعمق" in message):
                 effort = None
             else:
-                effort = "none"
+                effort = "low" if _analytical(message) else "none"
 
             # Failover chain: configured provider → auto-detected FreeLLMAPI
             # router → gemini alternate → local. Free-tier 429 on one model
@@ -1837,6 +1852,39 @@ def agent_run(req: AgentRequest):
                 final += (f"\n✅ بوابة التحقق: {len(list(ws.rglob('*.py')))} ملف بايثون "
                           "تُترجم بنجاح")
 
+        # behavioral gate (solo): الاختبارات المكتوبة تُشغَّل فعلاً — الترجمة
+        # وحدها كانت تنجّي كوداً خاطئ المنطق، والسلوك هو الحقيقة
+        if ok and req.mode != "team":
+            test_files = [p for p in list(ws.rglob("test_*.py"))
+                          + list(ws.rglob("*_test.py"))
+                          if p.stat().st_mtime >= t_run_start - 5]
+            if test_files:
+                yield _sse({"type": "status", "stage": "behavior",
+                            "text": f"🧪 بوابة السلوك: تشغّل {len(test_files)} "
+                                    "اختباراً كُتبت في هذه الجولة..."})
+                berrs = tm.ws_behavior_errors(ws, since=t_run_start)
+                if berrs:
+                    yield _sse({"type": "status", "stage": "heal",
+                                "text": "⚠️ اختبارات تفشل — جولة إصلاح المنطق..."})
+                    hfinal, _hok = ag.run_agent(
+                        "بوابة السلوك اصطادت اختبارات فاشلة — الكود يُترجم لكن "
+                        "المنطق خاطئ. أصلح المنطق حتى تنجح الاختبارات فعلاً:\n"
+                        + "\n".join(berrs[:3]), ctx, chain, on_event,
+                        memory_brief=brief)
+                    berrs2 = tm.ws_behavior_errors(ws, since=t_run_start)
+                    if berrs2:
+                        final = ((hfinal or final)
+                                 + "\n\n⚠️ اختبارات ما زالت تفشل بعد الإصلاح: "
+                                 + " | ".join(e[:180] for e in berrs2[:2]))
+                        ok = False
+                    else:
+                        final = ((hfinal or final)
+                                 + f"\n✅ بوابة السلوك: شُفي المنطق — "
+                                 f"{len(test_files)} اختباراً ينفذ وينجح الآن")
+                else:
+                    final += (f"\n✅ بوابة السلوك: {len(test_files)} اختباراً "
+                              "نُفذ ونجح فعلاً")
+
         tools_used = sorted({s["tool"] for s in ctx.steps})
         try:
             mem.record_run(req.task, ok, tools_used,
@@ -2062,6 +2110,7 @@ def code_run(req: CodeRunRequest):
         p = subprocess.run(
             argv, cwd=str(run_dir),
             capture_output=True, text=True, encoding="utf-8",
+            check=False,
             errors="replace", timeout=30)
         out, err, exit_code = p.stdout, p.stderr, p.returncode
     except subprocess.TimeoutExpired:
@@ -2357,7 +2406,7 @@ def _verify_project(files: list[tuple[str, str]]) -> dict:
                     try:
                         r = subprocess.run([node, "--check", tmp],
                                            capture_output=True, text=True,
-                                           timeout=20)
+                                           timeout=20, check=False)
                         if r.returncode != 0:
                             broken.append((path, (r.stderr or "").strip()[:200]))
                     finally:

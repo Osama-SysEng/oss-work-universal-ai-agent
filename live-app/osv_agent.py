@@ -343,6 +343,34 @@ def _sig(name: str, args: dict) -> str:
                                      ensure_ascii=False).encode()).hexdigest()[:16]
 
 
+# Dual-process routing (measured cascade spirit): cheap LOCAL signals pick the
+# thinking budget BEFORE any LLM call — no latency spent classifying.
+_HARD_RX = re.compile(
+    r"(مشروع|ابنِ|ابن|برمج|طوّر|طور|فريق|متعدد|كامل|نظام|اختبارات|وحدات|"
+    r"متجر|منصة|تطبيق|واجهة|خلفية|قاعدة بيانات|API)", re.IGNORECASE)
+
+
+def task_weight(task: str) -> str:
+    """hard = متعددة التسليمات/بناء واسع → خطة بتفكير كامل؛ low = المهمة المباشرة."""
+    t = task or ""
+    if len(t) > 180 or "\n" in t or len(_HARD_RX.findall(t)) >= 2:
+        return "hard"
+    return "low"
+
+
+def _tests_written(ws: Path, since: float) -> list[Path]:
+    """Test files written this run — the model must RUN them before claiming done."""
+    out = []
+    for pat in ("test_*.py", "*_test.py"):
+        for p in ws.rglob(pat):
+            try:
+                if p.stat().st_mtime >= since - 5:
+                    out.append(p)
+            except OSError:
+                continue
+    return out
+
+
 _ACTION_RX = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
 
 
@@ -392,16 +420,41 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                                                          memory_brief)}]
     final, complied_streak = "", 0
     sigs: list[tuple[int, str]] = []       # (step, signature) — loop detection
+    t0 = time.time()
+    hard = task_weight(task) == "hard"
+    max_tok = 3500 if hard else 3000
+    loop_hinted = False                    # first loop → nudge, second → stop
+    selfcheck_bounced = False              # run-your-tests nudge fires once
+    fail_streak = 0                        # consecutive failed actions
     for step in range(1, steps_limit + 1):
+        # Dual-process: hard tasks get FULL thinking on the planning step;
+        # execution steps run fast; struggling (fail_streak) re-engages full
+        # thinking — intelligence spent exactly where it is missing.
+        effort: str | None = None if (hard and step == 1) or fail_streak >= 2 \
+            else "low"
         reply = ""
         for cfg in chain:
             try:
-                reply = "".join(m._gw_stream(cfg, msgs, effort="low",
-                                             timeout=300, max_tokens=3000)).strip()
+                reply = "".join(m._gw_stream(cfg, msgs, effort=effort,
+                                             timeout=300,
+                                             max_tokens=max_tok)).strip()
                 if reply:
                     break
             except Exception:  # noqa: BLE001, S112 — next provider in the gateway chain
                 continue
+        if not reply:
+            # escalate once before dying: a full-thinking retry often revives
+            # a step that low-effort generation left empty
+            for cfg in chain:
+                try:
+                    reply = "".join(m._gw_stream(cfg, msgs, effort=None,
+                                                 timeout=300,
+                                                 max_tokens=max(max_tok, 4000))
+                                    ).strip()
+                    if reply:
+                        break
+                except Exception:  # noqa: BLE001, S112
+                    continue
         if not reply:
             return final, False
 
@@ -424,6 +477,17 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
         sigs.append((step, _sig(acts[-1]["tool"], acts[-1].get("args", {}))))
         recent = [s for _st, s in sigs if _st >= step - 9]
         if recent.count(recent[-1]) > 4:
+            if not loop_hinted:
+                # smarter than dying: one strategy-change nudge, window re-armed
+                loop_hinted = True
+                sigs.clear()
+                say({"type": "agent_step", "step": step,
+                     "tool": "loop-nudge", "ok": True})
+                msgs.append({"role": "user", "content":
+                             "تكررت نفس الإجراء بلا تقدم. غيّر استراتيجيتك: "
+                             "قسّم المشكلة، جرّب أسلوباً آخر، أو اقرأ آخر "
+                             "[النتيجة] بدقة قبل أي إجراء جديد."})
+                continue
             say({"type": "agent_step", "step": step, "tool": "loop-detected", "ok": False})
             return (final or "توقفت: اكتشفت حلقة مكررة (نفس الإجراء يتكرر بلا تقدم). "
                     "هذا كل ما أنجزته."), False
@@ -454,6 +518,22 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                              "المسارات الحقيقية."})
                 continue
             final = str(done_act.get("args", {}).get("answer", "")).strip()
+
+            # SMART SELF-CHECK: اختبارات كُتبت هذه الجولة ويجب أن تُشغَّل فعلاً
+            # قبل ادعاء النجاح — النموذج كان يعلن النجاح فوق اختبارات لم ينفذها
+            tests_here = _tests_written(ctx.workspace, t0)
+            ran_bash = any(s["tool"] == "bash" and s.get("ok") for s in ctx.steps)
+            if (not selfcheck_bounced and tests_here and not ran_bash
+                    and "bash" in ctx.tools):
+                selfcheck_bounced = True
+                msgs.append({"role": "assistant", "content": reply})
+                msgs.append({"role": "user", "content":
+                             "قبل الإنهاء: كتبت اختبارات ولم تشغّلها. نفّذها "
+                             "بأداة bash (مثلاً: python " +
+                             tests_here[0].name + ") وأصلح ما يفشل حتى تنجح "
+                             "فعلاً، ثم أنهِ بالنتيجة الحقيقية."})
+                continue
+
             # الصدق لا يُوكل للنموذج (OSS law): أي تحذير ⚠️ أو فشل في ملاحظات
             # الأدوات يُلحق بالرد النهائي إلزاماً — النموذج لا يستطيع إخفاء
             # عطل أو بديل مهما أغفل في سردِه.
@@ -489,6 +569,10 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
         msgs.append({"role": "user", "content":
                      "[النتيجة]\n" + "\n\n".join(observations) +
                      "\n\nأكمل: الإجراء التالي، أو أنهِ بـ done والتقرير."})
+        # struggle meter: repeated failures re-engage full thinking (effort
+        # escalates automatically) — exactly where intelligence was missing
+        fail_streak = 0 if any(s.get("ok") for s in ctx.steps[-len(futs):]) \
+            else fail_streak + 1
     # budget exhausted — report what EXISTS, never pretend
     return (final or "لم أُكمل المهمة ضمن حد الدورات — هذا كل ما أنجزته: "
             + (f"{len(ctx.steps)} خطوة أداة." if ctx.steps else "لا شيء.")), False

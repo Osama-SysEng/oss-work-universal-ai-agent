@@ -1,0 +1,7 @@
+{
+  "_تعليق": "انسخ هذا الملف إلى data/mcp_servers.json وعدّله — الأوامر فقط، لا مفاتيح (قانون OSS رقم 1). كل خادم عملية خارجية تشتغل على جهازك.",
+  "example-echo": {
+    "command": "python",
+    "args": ["-c", "import sys, json, time\nfor line in sys.stdin:\n    msg = json.loads(line)\n    if msg.get('method') == 'initialize':\n        rsp = {'jsonrpc': '2.0', 'id': msg['id'], 'result': {'protocolVersion': '2024-11-05', 'capabilities': {'tools': {}}, 'serverInfo': {'name': 'example-echo', 'version': '1.0'}}}\n    elif msg.get('method') == 'tools/list':\n        rsp = {'jsonrpc': '2.0', 'id': msg['id'], 'result': {'tools': [{'name': 'echo', 'description': 'يرد بنفس النص', 'inputSchema': {'type': 'object', 'properties': {'text': {'type': 'string'}}}}]}}\n    elif msg.get('method') == 'tools/call':\n        rsp = {'jsonrpc': '2.0', 'id': msg['id'], 'result': {'content': [{'type': 'text', 'text': msg['params']['arguments'].get('text', '')}]}}\n    else:\n        continue\n    sys.stdout.write(json.dumps(rsp) + '\\n')\n    sys.stdout.flush()"]
+  }
+}

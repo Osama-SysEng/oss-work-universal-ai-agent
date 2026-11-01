@@ -1768,6 +1768,7 @@ class AgentRequest(BaseModel):
     session_id: str = "agent"
     device: str = "safe"   # safe = أدوات الجهاز خلف بوابات الموافقة | full = ثقة كاملة
     mode: str = "solo"     # solo = حلقة واحدة | team = سرب وكلاء متوازٍ للمهام القابلة للتفكيك
+    resume: bool = False   # true = اكمل جلسة محفوظة بنفس الاسم (سياق + مساحة كما هي)
 
 
 @app.post("/api/v1/agent/run")
@@ -1799,12 +1800,25 @@ def agent_run(req: AgentRequest):
     # --- security scanner (read-only, always merged)
     import osv_sec as sec
     extra.update(sec.sec_tools())
+    # --- MCP: external tool servers the user configured (stdio, honest errors)
+    import osv_mcp
+    extra.update(osv_mcp.mcp_tools())
+    # --- git: the agent checkpoints its own work inside its workspace
+    import osv_git
+    extra.update(osv_git.git_tools())
+    # --- sessions: resume support
+    import osv_sessions as sessions
+    prior = sessions.resume_msgs(req.session_id) if req.resume else None
+    resumed_turns = len(prior) if prior else 0
 
     def gen():
         yield _sse({"type": "status", "stage": "agent",
                     "text": f"🤖 وضع الوكيل: مساحة عمل {ws.name} — أدوات حقيقية بأمان"
                             + (" + تحكم الجهاز الكامل" if req.device == "full" else "")
                             + (" + 🧠 ذاكرة متعلَّمة" if brief else "")
+                            + (" + 🔌 MCP" if any("mcp" in t for t in extra) else "")
+                            + (f" + 📂 استئناف ({resumed_turns} رسالة من آخر جلسة)"
+                               if prior else "")
                             + (" + 👥 سرب متوازٍ" if req.mode == "team" else "")})
         events = []
         ctx = ag.AgentContext(ws, req.session_id,
@@ -1825,7 +1839,7 @@ def agent_run(req: AgentRequest):
         if final is None:
             # solo — أو تراجع صادق بعد رفض التفكيك (الفريق لا يُزيَّف أبداً)
             final, ok = ag.run_agent(req.task, ctx, chain, on_event,
-                                     memory_brief=brief)
+                                     memory_brief=brief, prior_msgs=prior)
 
         # --- بوابة التحقق التلقائية (الدقة لا تُوكل للنموذج): كل بايثون كُتب في
         # هذه الجولة يُترجم فعلياً؛ جولة إصلاح واحدة بحد أقصى، والنتيجة تُروى كما هي
@@ -1884,6 +1898,14 @@ def agent_run(req: AgentRequest):
                 else:
                     final += (f"\n✅ بوابة السلوك: {len(test_files)} اختباراً "
                               "نُفذ ونجح فعلاً")
+
+        # --- حفظ الجلسة: الاستئناف لاحقاً يبدأ من هذه المحادثة بالضبط
+        # (solo فقط — سرب له شجرة سياقات خاصة به، حفظها جزئي كذب)
+        if req.mode != "team":
+            try:
+                sessions.save(req.session_id, req.task, ctx.msgs, ws)
+            except Exception:  # noqa: BLE001 — persistence must not break serving
+                pass
 
         tools_used = sorted({s["tool"] for s in ctx.steps})
         try:

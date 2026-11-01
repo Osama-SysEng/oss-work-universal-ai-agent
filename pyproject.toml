@@ -52,7 +52,7 @@ include = ["osv1*"]
 "osv1.interface" = ["web/*.html", "web/*.css", "web/*.js"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "live-app/tests"]
 pythonpath = ["."]
 addopts = "-q --tb=short"
 
@@ -71,6 +71,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S", "B", "E402", "F401"]
+"live-app/tests/*" = ["S", "B", "E402", "F401"]
 "osv1/interface/web/*" = ["E501"]
 
 [tool.black]

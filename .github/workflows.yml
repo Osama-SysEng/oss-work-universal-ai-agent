@@ -12,7 +12,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Install deps (framework + live-app backend share fastapi/pydantic)
+        run: python -m pip install -e ".[dev]"
       - name: Compile source
-        run: python -m compileall -q core scripts
-      - name: Run tests
+        run: python -m compileall -q core scripts live-app
+      - name: Run tests (framework + live-app agent engine)
         run: python -m pytest

@@ -72,6 +72,7 @@ class AgentContext:
         self.workspace = workspace
         self.session_id = session_id
         self.steps: list[dict] = []          # audit trail: tool, args, ok, ms
+        self.msgs: list[dict] = []           # live LLM transcript (sessions save it)
         self.chain: list[dict] | None = None  # provider chain (team_spawn reads it)
         self.tools: dict = dict(TOOLS)
         if extra_tools:
@@ -400,13 +401,15 @@ def parse_action(text: str) -> dict | None:
 
 def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
               memory_brief: str = "", max_steps: int | None = None,
-              require_steps: int = 0):
+              require_steps: int = 0,
+              prior_msgs: list[dict] | None = None):
     """Drive the real tool loop. on_event(dict) receives progress events.
     Returns (final_text, ok). Fails HONESTLY — never fakes completion.
     max_steps: workers in a team run bounded (12) — a swarm must converge.
     require_steps: ممنوع إنهاء مهمة العمل قبل تنفيذ هذا العدد من الإجراءات —
     النموذج الذي يرسل done من أول دورة بلا أن يكتب ملفاً يُردُّ للعمل إلزاماً
-    (ثغرة حية اكتشفها قياس السرب: عاملان «اكتملا» بصفر خطوات وملفات وهمية)."""
+    (ثغرة حية اكتشفها قياس السرب: عاملان «اكتملا» بصفر خطوات وملفات وهمية).
+    prior_msgs: محادثة سابقة (استئناف جلسة) — تبدأ الحلقة من عندها بدل الصفر."""
     import oss_work_live as m
     steps_limit = max_steps or MAX_STEPS
 
@@ -418,6 +421,12 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
 
     msgs = [{"role": "system", "content": compose_system(task, ctx.tools,
                                                          memory_brief)}]
+    if prior_msgs:
+        msgs += prior_msgs
+        msgs.append({"role": "user", "content":
+                     f"استئناف جلسة سابقة — مساحة عملك كما تركتها لا تُعاد من "
+                     f"الصفر. المهمة الجديدة: {task}"})
+    ctx.msgs = msgs                       # live reference — sessions read it
     final, complied_streak = "", 0
     sigs: list[tuple[int, str]] = []       # (step, signature) — loop detection
     t0 = time.time()
@@ -465,6 +474,7 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                 # the model keeps prose-ing instead of acting: accept its text
                 # as the answer but SAY it never used tools (honesty rule)
                 say({"type": "agent_step", "step": step, "tool": "none", "ok": False})
+                msgs.append({"role": "assistant", "content": reply})
                 return reply[:2000], False
             msgs.append({"role": "assistant", "content": reply})
             msgs.append({"role": "user", "content":
@@ -489,6 +499,7 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                              "[النتيجة] بدقة قبل أي إجراء جديد."})
                 continue
             say({"type": "agent_step", "step": step, "tool": "loop-detected", "ok": False})
+            msgs.append({"role": "assistant", "content": reply})
             return (final or "توقفت: اكتشفت حلقة مكررة (نفس الإجراء يتكرر بلا تقدم). "
                     "هذا كل ما أنجزته."), False
 
@@ -507,6 +518,9 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                         _ok2, _obs2 = fut2.result()
                         say({"type": "agent_step", "step": step,
                              "tool": a["tool"], "ok": _ok2})
+            # النص النهائي يعيش في الجلسة حتى لو كانت المهمة موجة واحدة —
+            # بدونه يُحفظ ملف جلسة فارغ ولا يستأنف شيء
+            msgs.append({"role": "assistant", "content": reply})
             if require_steps and len([s for s in ctx.steps if s.get("ok")]) < require_steps:
                 # الصدق بنيوي: إنهاء بلا عمل ناجح فعلي = زور يُرد لا يُقبل
                 # (خطوة فاشلة لا تُحتسب — الكتابة الساقطة ليست إنجازاً)

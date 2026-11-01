@@ -198,23 +198,47 @@ def run_brain(message: str, history: list[dict], chain: list[dict],
         return done(None, trace)
 
     def call_stage(stage: str, msgs: list[dict], effort: str | None,
-                   max_tokens: int, exclude: tuple | None = None) -> tuple[dict, str]:
+                   max_tokens: int, exclude: tuple | None = None,
+                   stream_out: bool = False) -> tuple[dict, str]:
         """One pipeline stage with gateway failover. `exclude` keeps the merge
         honest: the critique MUST NOT reuse the draft's provider unless the
-        pool has nobody else left."""
+        pool has nobody else left.
+        stream_out: بث المرئي حياً — يُخفى تفكير R1 (كل شيء قبل </think>)،
+        وما بعدها يصل للمستخدم لحظة بلحظة بدل الانفجار في النهاية."""
         pref = [c for c in chain if _pmid(c) != exclude] if exclude else list(chain)
         order = pref + [c for c in chain if c not in pref]
         last_exc: Exception | None = None
         for cfg in order:
             try:
                 t0 = time.monotonic()
-                full = list(stream_fn(cfg, msgs, effort=effort,
-                                      timeout=call_timeout_s, max_tokens=max_tokens))
-                text = "".join(full).strip()
+                text, streamed, emitted = "", "", False
+                for chunk in stream_fn(cfg, msgs, effort=effort,
+                                       timeout=call_timeout_s,
+                                       max_tokens=max_tokens):
+                    text += chunk
+                    if stream_out:
+                        streamed += chunk
+                        if "</think>" in streamed:
+                            # كتلة تفكير اكتملت — المرئي (ما بعدها) يُبث
+                            if not emitted:
+                                emitted = True
+                                visible = streamed.split("</think>", 1)[1]
+                                if visible:
+                                    on_delta(visible)
+                            else:
+                                on_delta(chunk)
+                        elif "<think>" not in streamed:
+                            # لا كتلة تفكير أصلاً (مزودات غير R1 / جهد منخفض)
+                            # — كل حرف يُبث لحظة وصوله
+                            on_delta(chunk)
+                if (stream_out and not emitted and "<think>" in streamed
+                        and "</think>" not in streamed and text.strip()):
+                    # تفكير لم يُغلق أبداً — split_think يعتبر الكل إجابة
+                    on_delta(text)
                 trace["stages"].append({"stage": stage, "provider": _ptag(cfg),
                                         "ms": round((time.monotonic() - t0) * 1000),
                                         "chars": len(text)})
-                return cfg, text
+                return cfg, text.strip()
             except Exception as exc:  # noqa: BLE001 — failover to next provider
                 last_exc = exc
                 trace["stages"].append({"stage": stage, "provider": _ptag(cfg),
@@ -228,7 +252,7 @@ def run_brain(message: str, history: list[dict], chain: list[dict],
         on_status("🧠 عقل OS_V1: تفكير موجّه بهندسة DeepSeek-R1...")
         try:
             _cfg, raw = call_stage("مسودة", draft_messages(message, history, context),
-                                   effort=None, max_tokens=3000)
+                                   effort=None, max_tokens=3000, stream_out=True)
         except Exception as exc:  # noqa: BLE001 — honest fallback
             trace["note"] = f"فشل التفكير: {str(exc)[:80]}"
             return done(None, trace)
@@ -268,6 +292,7 @@ def run_brain(message: str, history: list[dict], chain: list[dict],
     if re.search(r"الحكم:\s*سليمة", critique or ""):
         trace["skipped_synthesis"] = True
         on_status("🧠 المدقق أقرّ المسودة — التوليف تُخُطّي (ميزانية التفكير)")
+        on_delta(draft_ans)          # المسودة هي الرد — تُبث الآن (كانت محجوبة)
         return done(draft_ans, trace)
 
     on_status("🧠 3/3 تركيب نهائي يدمج النقد (مزود ثالث عند توفره)...")
@@ -275,15 +300,18 @@ def run_brain(message: str, history: list[dict], chain: list[dict],
         _cfg_s, raw_syn = call_stage("تركيب",
                                      synthesis_messages(message, draft_ans, critique, context),
                                      effort="low", max_tokens=3000,
-                                     exclude=_pmid(cfg_c) if critique else None)
+                                     exclude=_pmid(cfg_c) if critique else None,
+                                     stream_out=True)
         _th, final = split_think(raw_syn)
         final = final or raw_syn
         if not final:
             # synthesis empty — the audited draft is the honest floor
+            on_delta(draft_ans)
             return done(draft_ans, trace)
         return done(final, trace)
     except Exception:  # noqa: BLE001 — deliver the audited draft honestly
         trace["note"] = "تعذر التركيب — أُعيدت المسودة المُدقَّقة (بلا ادعاء اكتمال)"
+        on_delta(draft_ans)
         return done(draft_ans, trace)
 
 

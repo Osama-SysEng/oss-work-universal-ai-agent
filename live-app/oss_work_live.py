@@ -2059,6 +2059,15 @@ def media_list():
     return {"ok": ok, "list": obs, "dir": str(media_list_dir())}
 
 
+@app.get("/")
+def ui_home():
+    """The agent's own face — zero dependencies, same origin, Arabic RTL."""
+    p = Path(__file__).resolve().parent / "index.html"
+    if p.is_file():
+        return FileResponse(p, media_type="text/html")
+    return {"ok": False, "message": "الواجهة غير موجودة"}
+
+
 def media_list_dir():
     import osv_media as md
     return md.media_dir()

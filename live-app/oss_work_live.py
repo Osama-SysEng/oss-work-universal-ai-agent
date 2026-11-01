@@ -1806,10 +1806,17 @@ def agent_run(req: AgentRequest):
     # --- git: the agent checkpoints its own work inside its workspace
     import osv_git
     extra.update(osv_git.git_tools())
+    # --- long-io: million-token lanes (workspace dossier + part-stitched files)
+    import osv_longio
+    extra.update(osv_longio.longio_tools())
     # --- sessions: resume support
     import osv_sessions as sessions
     prior = sessions.resume_msgs(req.session_id) if req.resume else None
     resumed_turns = len(prior) if prior else 0
+    # --- distill: owned recipes retrieved for THIS task (the growing model)
+    import osv_distill
+    brief = (brief + "\n" + osv_distill.inject(
+        osv_distill.recipes_for(req.task))).strip()
 
     def gen():
         yield _sse({"type": "status", "stage": "agent",
@@ -1836,6 +1843,31 @@ def agent_run(req: AgentRequest):
                               lambda e: events.append(e), brief)
             if res is not None:
                 final, ok, team_info = res
+        if req.mode == "project":
+            # long-horizon: goal → milestones → tasks, persisted per task,
+            # resumable by the same session_id, gated per product
+            import osv_project as pj
+            doc = pj.load(req.session_id)
+            if doc is None:
+                doc = pj.plan(req.task, chain, _gw_stream)
+            if doc is None:
+                final, ok = ("تعذرت صياغة خطة مشروع — لا خطة وهمية. أعد "
+                             "المحاولة بصياغة أوضح للهدف.", False)
+            else:
+                if not pj.load(req.session_id):
+                    pj.save(req.session_id, doc)
+                    yield _sse({"type": "status", "stage": "project",
+                                "text": f"🗺️ خطة «{doc['name']}»: "
+                                        f"{len(doc['milestones'])} مراحل — "
+                                        f"{pj.status(doc)['tasks_total']} مهمة"})
+                doc = pj.run_project(req.session_id, doc, chain, ws.parent,
+                                     on_event, extra, brief)
+                st = doc["status"]
+                final = (f"المشروع «{st['name']}»: {st['tasks_done']} مكتملة، "
+                         f"{st['tasks_failed']} فاشلة، {st['tasks_pending']} "
+                         f"متبقية من {st['tasks_total']} — استأنف بنفس "
+                         f"session_id و resume=true.")
+                ok = st["tasks_failed"] == 0 and st["tasks_pending"] == 0
         if final is None:
             # solo — أو تراجع صادق بعد رفض التفكيك (الفريق لا يُزيَّف أبداً)
             final, ok = ag.run_agent(req.task, ctx, chain, on_event,
@@ -1898,6 +1930,20 @@ def agent_run(req: AgentRequest):
                 else:
                     final += (f"\n✅ بوابة السلوك: {len(test_files)} اختباراً "
                               "نُفذ ونجح فعلاً")
+
+        # --- التعلم من الجولة: سجل المسار (بذرة SFT) + استخلاص وصفة إن تأهلت
+        # (نجاح بملفات ≥2 → نداء واحد رخيص؛ الفشل هنا لا يكسل الخدمة أبداً)
+        if req.mode == "solo":
+            try:
+                files = [p.relative_to(ws).as_posix() for p in ws.rglob("*")
+                         if p.is_file() and "context_pack" not in p.name][:20]
+                osv_distill.record_trajectory(req.task, ok, tools_used,
+                                              files, final or "")
+                if ok:
+                    osv_distill.distill_from_run(req.task, files, chain,
+                                                 _gw_stream)
+            except Exception:  # noqa: BLE001 — learning must not break serving
+                pass
 
         # --- حفظ الجلسة: الاستئناف لاحقاً يبدأ من هذه المحادثة بالضبط
         # (solo فقط — سرب له شجرة سياقات خاصة به، حفظها جزئي كذب)

@@ -36,6 +36,37 @@ This release is built from the OS_V1 specification. The old codebase was replace
 | **Its own tools** | A spreadsheet engine that writes real `.xlsx` files, a dashboard builder, AST code analysis, a no-network sandbox, a read-only reader, and an app-synthesis engine that builds a tool after understanding a file format. |
 | **A safety layer that cannot be edited by the system** | Permission scopes, human approval for irreversible actions, a tamper-evident audit log, an instant kill switch, prompt-injection defence, and an encrypted secret store. |
 
+## The live app — `live-app/` (OS_V1 as a running product)
+
+The framework above ships as a library; **`live-app/` is the same idea as a
+running assistant you can actually talk to**: FastAPI backend + React/Three.js
+UI. Everything below is **measured, not promised**.
+
+| Capability | What it does | Measured proof |
+|---|---|---|
+| **Real-tool agent loop** (`osv_agent.py`) | bash / files / glob / grep / web / skills inside a confined per-run workspace, denylisted destructive commands, loop detection, honest final reports | math answered **exactly** (16,634,063) by executing code in 9.8 s — never guessing |
+| **Parallel agent swarm** (`osv_team.py`, `mode: "team"`) | one decomposition call → 2–4 workers run **concurrently** in isolated workspaces → per-worker verify+heal → merged report injected with the **real disk file list** | same 4-file task: swarm **142 s** vs solo **255 s** = **1.8× faster**, all files verified on disk |
+| **Verify-heal gate** (server-side) | every `.py` written during a run must compile — errors are caught, one heal round runs, the outcome is reported either way | broken file planted in unit test → caught → healed → PASS (12/12) |
+| **Structural honesty** | `require_steps`: an agent cannot claim `done` without **successful** work; hidden failures are appended to the final answer verbatim; merge cannot claim files that don't exist | a worker claiming "done" with zero steps is bounced back to work (live-tested) |
+| **Media: images** (`osv_media.py`) | Pollinations turbo/flux, Arabic→English translation + cache, `safe=true`, pixel-inspected | 0.3–0.9 s per image |
+| **Media: TRUE video** | LTX-Video (open source) incl. image-to-video, quota-honest fallback that says it is not a real video | 308 KB MP4, 153 frames, mid-frame pixel-verified |
+| **Media: cinematic motion** (`osv_motion.py`) | Higgsfield-style camera presets — 12 presets (crash_zoom, orbit, vertigo, dolly, handheld, ken_burns…), Genjutsu variants (1 image → N visions), cinema composer with crossfades — local cv2, no quota, no keys | 4 visions in **2.6 s**, composed film in **2.1 s** — verified by viewing pixels |
+| **Security scanner** (`osv_sec.py`) | planted-vulnerability detection + self-scan | 2/2 critical planted caught, 32-file self-scan clean |
+
+### Run the live app
+
+```bash
+cd live-app
+pip install -r requirements-backend.txt
+python oss_work_live.py            # API on http://127.0.0.1:8000
+
+npm install && npm run dev         # UI on http://localhost:3000
+```
+
+The UI has an agent toggle (🤖), a swarm toggle (👥), and quick actions
+(cinematic motion, team project build, security, games). Media output is
+pixel-verified before it is ever called a success.
+
 ## Quick start
 
 ```bash

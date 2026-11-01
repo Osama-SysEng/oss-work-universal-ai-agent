@@ -1,0 +1,8 @@
+# OSS Work — Backend dependencies
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.0.0
+python-multipart>=0.0.9
+
+# Path to the oss-work-universal-ai-agent repo (set at runtime via env var)
+# OSS_WORK_REPO=C:\path\to\oss-work-universal-ai-agent

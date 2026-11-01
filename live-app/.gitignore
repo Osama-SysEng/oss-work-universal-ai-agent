@@ -1,0 +1,26 @@
+# runtime state & secrets — never commit (OSS law 1: no secrets ever)
+data/
+data-osv1/
+gateway.secret
+*.secret
+.env
+.env.*
+workspace/
+media/
+dist/
+
+# python
+__pycache__/
+*.pyc
+.ruff_cache/
+*.egg-info/
+
+# node
+node_modules/
+
+# logs
+*.log
+
+# os junk
+Thumbs.db
+.DS_Store

@@ -1,0 +1,51 @@
+version: "3.9"
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - OSS_WORK_REPO=/workspace/oss-work-universal-ai-agent
+      - DATABASE_URL=postgresql+asyncpg://osswork:osswork_pass@db:5432/osswork
+      - REDIS_HOST=redis
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../oss-work-universal-ai-agent:/workspace/oss-work-universal-ai-agent:ro
+      - osswork_data:/app/data
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: osswork
+      POSTGRES_PASSWORD: osswork_pass
+      POSTGRES_DB: osswork
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U osswork"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  osswork_data:
+  pgdata:

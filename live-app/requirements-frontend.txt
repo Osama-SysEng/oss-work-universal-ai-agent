@@ -1,0 +1,9 @@
+# OSS Work — Frontend dependencies
+react
+react-dom
+three
+@react-three/fiber
+@react-three/drei
+framer-motion
+vite
+@vitejs/plugin-react

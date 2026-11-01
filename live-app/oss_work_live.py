@@ -2094,6 +2094,37 @@ def security_scan(req: SecScanRequest):
             "files_scanned": res["files_scanned"], "sec": res["sec"]}
 
 
+@app.get("/api/v1/security/audit")
+def security_audit():
+    """FULL self-audit: (1) the redteam battery attacking our own REAL
+    gates — traversal on the real AgentContext, SSRF/RCE/secrets/injection
+    families, and the git-secrets gate on a real repo; (2) the static
+    scanner (osv_sec) over the live app directory. The result lands in the
+    distill ledger — a security regression becomes visible the day it
+    appears, not the day it is exploited."""
+    import osv_redteam as rt
+    import osv_sec as sec
+    t0 = time.time()
+    battery = rt.run_battery()
+    static = sec.scan_project(Path(__file__).resolve().parent)
+    ok_ledger = rt.record_audit(battery)
+    return {"ok": True,
+            "verdict": "مُحصَّن" if battery["all_ok"] and static["clean"]
+                       else "ثغرات معلنة — طالع التقرير",
+            "battery": {"all_ok": battery["all_ok"],
+                        "attacks": f"{battery['attacks_blocked']}/"
+                                   f"{battery['attacks_total']}",
+                        "controls": f"{battery['controls_passed']}/"
+                                    f"{battery['controls_total']}",
+                        "failures": battery["failures"]},
+            "static": {"clean": static["clean"],
+                       "counts": static["counts"],
+                       "files_scanned": static["files_scanned"]},
+            "ledger_recorded": ok_ledger,
+            "seconds": round(time.time() - t0, 2),
+            "report": rt.audit_text(battery)}
+
+
 # --- PROVIDERS: استحضار المفاتيح — دليل كل مزود بمصدر مفتاحه ---
 
 @app.get("/api/v1/providers")

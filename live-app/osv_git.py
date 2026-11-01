@@ -75,6 +75,26 @@ def git_tools():
         message = str(message or "").strip()
         if not message:
             return False, "الالتزام يحتاج message — لا التزامات بلا معنى"
+        ok_e, msg_e = _ensure_repo(ctx)   # repo FIRST — the gate needs status,
+        if not ok_e:                      # and the FIRST commit must be gated
+            return False, msg_e           # too (a live-caught flaw)
+        # secrets gate: scan what WOULD be staged before it lands in history
+        # (quotepath=false so Arabic filenames are never a blind spot)
+        import osv_redteam
+        ok_st, st = _run_git(["-c", "core.quotepath=false",
+                              "status", "--porcelain"], ctx.workspace)
+        if ok_st and st:
+            changed = []
+            for line in st.splitlines():
+                path = line[3:].strip() if len(line) > 3 else ""
+                if " -> " in path:
+                    path = path.split(" -> ", 1)[1]
+                path = path.strip('"').strip()
+                if path and not path.startswith(".git"):
+                    changed.append(path)
+            ok_sec, why_sec = osv_redteam.screen_commit(ctx.workspace, changed)
+            if not ok_sec:
+                return False, why_sec
         _git(ctx, "add", ["-A"])       # workspace-scoped: the repo IS the ws
         ok, out = _git(ctx, "commit", ["-m", message])
         if not ok:
@@ -106,7 +126,9 @@ def git_tools():
         "git_commit": {"fn": _commit,
                        "args": {"message": "str رسالة الالتزام"},
                        "desc": "يلتزم بكل تغييرات مساحة عملك برسالة — "
-                               "التزم بعد كل إنجاز مستقر حتى لا يُفقد"},
+                               "التزم بعد كل إنجاز مستقر حتى لا يُفقد. "
+                               "بوابة أمنية تفحص الملفات المُرحَّلة وترفض "
+                               "الالتزام إذا وُجد مفتاح/سر مكتشف"},
         "git_diff":   {"fn": _diff, "args": {},
                        "desc": "يظهر الفرق عن آخر التزام — قبل أي إعادة "
                                "كتابة كبيرة"},

@@ -334,5 +334,24 @@ def record_audit(report: dict) -> bool:
         audit_text(report))
 
 
+# the attack corpus lives in these files BY DESIGN — findings there are the
+# known attack material itself (fake documented AWS keys, attack URLs),
+# not vulnerabilities. Classified and DISCLOSED, never hidden.
+_CORPUS_FILES = {"osv_redteam.py", "test_redteam.py"}
+
+
+def classify_static(static: dict) -> dict:
+    """Split static-scan findings into real (any file) vs attack-corpus
+    (the redteam module + its tests). The verdict is clean only when the
+    REAL set is empty — the corpus set stays on the record."""
+    findings = static.get("findings", []) or []
+    corpus = [f for f in findings
+              if Path(str(f.get("file", ""))).name in _CORPUS_FILES]
+    real = [f for f in findings
+            if Path(str(f.get("file", ""))).name not in _CORPUS_FILES]
+    return {"real": real, "corpus": corpus, "real_clean": not real,
+            "real_count": len(real), "corpus_count": len(corpus)}
+
+
 def battery_json(report: dict) -> str:
     return json.dumps(report, ensure_ascii=False, indent=1, default=str)

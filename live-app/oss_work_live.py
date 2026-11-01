@@ -1931,6 +1931,8 @@ def agent_run(req: AgentRequest):
                     final += (f"\n✅ بوابة السلوك: {len(test_files)} اختباراً "
                               "نُفذ ونجح فعلاً")
 
+        tools_used = sorted({s["tool"] for s in ctx.steps})
+
         # --- التعلم من الجولة: سجل المسار (بذرة SFT) + استخلاص وصفة إن تأهلت
         # (نجاح بملفات ≥2 → نداء واحد رخيص؛ الفشل هنا لا يكسل الخدمة أبداً)
         if req.mode == "solo":
@@ -1953,7 +1955,6 @@ def agent_run(req: AgentRequest):
             except Exception:  # noqa: BLE001 — persistence must not break serving
                 pass
 
-        tools_used = sorted({s["tool"] for s in ctx.steps})
         try:
             mem.record_run(req.task, ok, tools_used,
                            len(ctx.steps) or (team_info and sum(
@@ -2107,9 +2108,11 @@ def security_audit():
     t0 = time.time()
     battery = rt.run_battery()
     static = sec.scan_project(Path(__file__).resolve().parent)
+    cls = rt.classify_static(static)
     ok_ledger = rt.record_audit(battery)
+    clean = bool(battery["all_ok"]) and bool(cls["real_clean"])
     return {"ok": True,
-            "verdict": "مُحصَّن" if battery["all_ok"] and static["clean"]
+            "verdict": "مُحصَّن" if clean
                        else "ثغرات معلنة — طالع التقرير",
             "battery": {"all_ok": battery["all_ok"],
                         "attacks": f"{battery['attacks_blocked']}/"
@@ -2118,6 +2121,18 @@ def security_audit():
                                     f"{battery['controls_total']}",
                         "failures": battery["failures"]},
             "static": {"clean": static["clean"],
+                       "real_clean": cls["real_clean"],
+                       "real_count": cls["real_count"],
+                       "corpus_count": cls["corpus_count"],
+                       "corpus_note": (f"{cls['corpus_count']} إصابة داخل قمع "
+                                       "الهجمات نفسه (osv_redteam.py / "
+                                       "test_redteam.py) — عمداً، مفاتيح "
+                                       "مزيفة موثقة وأنماط هجوم معلومة، "
+                                       "وليست ثغرات"),
+                       "real_findings": [
+                           {"file": f.get("file"), "line": f.get("line"),
+                            "rule": f.get("rule"), "severity": f.get("severity")}
+                           for f in cls["real"][:20]],
                        "counts": static["counts"],
                        "files_scanned": static["files_scanned"]},
             "ledger_recorded": ok_ledger,

@@ -352,7 +352,13 @@ def system_prompt(task: str, table: dict | None = None) -> str:
         "9. الملف الكبير (صفحة HTML كاملة، CSS، فوق ~150 سطراً) يُكتب أجزاءً بأداة "
         "long_write (part/total) — الأمر الذي يتجاوز حد الطول يُقطع في المنتصف ولا يُنفذ. "
         "وكل write_file ملف واحد معقول؛ وابنِ المشاريع من ملفات متعددة صغيرة "
-        "(index.html + style.css منفصل) لا ملفاً واحداً ضخماً.")
+        "(index.html + style.css منفصل) لا ملفاً واحداً ضخماً.\n"
+        "10. طلب موقع/تطبيق فيه تسجيل أو حسابات أو بيانات أو خلفية = نظام كامل "
+        "ثلاثي الطبقات — صفحة ثابتة وحدها تُرفض: (أ) schema.sql بجداول واضحة + "
+        "تنفيذ حقيقي بـ sqlite3 عبر bash، (ب) server.py بمكتبة http.server "
+        "القياسية (endpoints تقرأ وتكتب القاعدة، JSON داخلاً وخارجاً)، (ج) "
+        "الواجهة تستدعي الـAPI بـ fetch. واختبر تسجيلاً فعلياً بأداة bash قبل "
+        "الإنهاء — ناتج الأمر الحقيقي هو الدليل.")
 
 
 def _sig(name: str, args: dict) -> str:
@@ -390,6 +396,27 @@ def _tests_written(ws: Path, since: float) -> list[Path]:
 
 
 _ACTION_RX = re.compile(r"```\s*(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+
+_FS_RX = re.compile("خلفية|باكند|باك إند|backend|قاعدة بيانات|قواعد بيانات|"
+                    "database|sqlite|api|تسجيل|دخول|حسابات|مستخدمين")
+
+
+def _wants_fullstack(task: str) -> bool:
+    """A BUILD task that demands accounts/backend/db — front-only delivery is
+    the 2 Nov user complaint (it built one page and declared done)."""
+    t = task or ""
+    return bool(re.search("ابن|أنشئ|انشئ|اصنع|صمم|موقع|تطبيق|نظام|منصة|مشروع", t)
+                and _FS_RX.search(t))
+
+
+def _has_backend(ws) -> bool:
+    """Real backend artifacts on disk: python server / sql schema / db file."""
+    try:
+        return (any(ws.rglob("*.py")) or any(ws.rglob("*.sql"))
+                or any(ws.rglob("*.db")))
+    except Exception:  # noqa: BLE001 — a broken workspace must not kill the gate
+        return False
 
 
 def _looks_truncated_action(reply: str) -> bool:
@@ -462,6 +489,7 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
     loop_hinted = False                    # 3000 cut the JSON mid-content and
     selfcheck_bounced = False              # shipped the raw text (2 Nov flaw)
     truncation_hinted = False              # split-the-file nudge fires once
+    fs_bounced = False                     # fullstack completeness bounce (once)
     fail_streak = 0                        # consecutive failed actions
     for step in range(1, steps_limit + 1):
         # Dual-process: hard tasks get FULL thinking on the planning step;
@@ -593,6 +621,30 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                              "بأداة bash (مثلاً: python " +
                              tests_here[0].name + ") وأصلح ما يفشل حتى تنجح "
                              "فعلاً، ثم أنهِ بالنتيجة الحقيقية."})
+                continue
+
+            # FULLSTACK COMPLETENESS GATE (2 Nov user feedback: it shipped a
+            # front page while the user asked for واجهة+خلفية+قاعدة بيانات):
+            # a build whose keywords demand accounts/backend/db is NOT done
+            # while the workspace holds NO backend artifact — one honest
+            # bounce with the concrete architecture, then accept truthfully.
+            if (not fs_bounced and _wants_fullstack(task)
+                    and not _has_backend(ctx.workspace)):
+                fs_bounced = True
+                msgs.append({"role": "assistant", "content": reply})
+                msgs.append({"role": "user", "content":
+                             "الاكتمال مرفوض: طلب المستخدم نظاماً كامل الطبقات "
+                             "وأنشأت واجهة فقط. ابنِ البقية فعلياً:\n"
+                             "1) قاعدة بيانات: ملف schema.sql بجداول واضحة، "
+                             "ثم نفّذ بأداة bash أمراً حقيقياً ينشئ قاعدة "
+                             "sqlite3 منها (المكتبة القياسية — بلا تثبيت).\n"
+                             "2) خلفية: ملف server.py بمكتبة http.server "
+                             "القياسية — endpoints للتسجيل والجلب تقرأ وتكتب "
+                             "القاعدة الفعلية (JSON داخلاً وخارجاً).\n"
+                             "3) اختبر بأداة bash: سجّل مستخدماً ثم اجلبه — "
+                             "ناتج الأمر الحقيقي هو الدليل.\n"
+                             "4) الواجهة تستدعي الـAPI بـ fetch — ممنوع "
+                             "بيانات وهمية داخل HTML."})
                 continue
 
             # الصدق لا يُوكل للنموذج (OSS law): أي تحذير ⚠️ أو فشل في ملاحظات

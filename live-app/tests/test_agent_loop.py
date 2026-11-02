@@ -157,9 +157,9 @@ def test_truncated_action_is_nudged_to_split_then_work_accepted(tmp_path, monkey
         calls.append((msgs[-1]["content"], max_tokens))
         if len(calls) == 1:
             return ['```json\n' + huge]        # truncated mid-content
-        return ['```json\n{"tool": "write_file", "args": {"path": "index.html", '
+        return [('```json\n{"tool": "write_file", "args": {"path": "index.html", '
                 '"content": "<h1>مدرسة</h1>"}}\n```\n'
-                '```json\n{"tool": "done", "args": {"answer": "بدأت الصفحة الرئيسية"}}\n```']
+                '```json\n{"tool": "done", "args": {"answer": "بدأت الصفحة الرئيسية"}}\n```')]
 
     monkeypatch.setattr(m, "_gw_stream", fake_gw)
     ctx = ag.AgentContext(tmp_path, "t")
@@ -207,3 +207,66 @@ def test_hard_build_gets_real_token_room(tmp_path, monkeypatch):
 
 def test_parse_actions_tolerates_fence_without_json_tag():
     assert ag.parse_actions('```\n{"tool": "bash", "args": {"command": "dir"}}\n```')
+
+
+# ------------------------------------------------- fullstack completeness gate
+
+def test_wants_fullstack_flags_build_tasks_with_layers():
+    assert ag._wants_fullstack(
+        "ابن لي موقعاً لمدارس يشمل كل الخدمات التعليمية وطريقة التسجيل سواء معلم او طالب")
+    assert ag._wants_fullstack("أنشئ تطبيق بواجهة وخلفية وقاعدة بيانات")
+    assert not ag._wants_fullstack("اكتب لي صفحة هبوط بسيطة لشركة")
+    assert not ag._wants_fullstack("اشرح لي الفرق بين list و tuple")
+
+
+def test_fullstack_done_is_bounced_until_backend_exists(tmp_path, monkeypatch):
+    """The 2 Nov feedback: the task asked واجهة+خلفية+قاعدة بيانات — the model
+    wrote index.html only and declared done. The gate bounces ONCE demanding
+    the real layers; the second wave lands server.py + schema.sql and passes."""
+    calls = []
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        calls.append(msgs[-1]["content"])
+        if len(calls) == 1:
+            return [('```json\n{"tool": "write_file", "args": {"path": "index.html", '
+                     '"content": "<h1>مدرسة</h1>"}}\n```\n'
+                     '```json\n{"tool": "done", "args": {"answer": "تم بناء الموقع"}}\n```')]
+        if len(calls) == 2:
+            # the bounce MUST name the missing layers concretely
+            assert "schema.sql" in calls[-1] and "server.py" in calls[-1]
+            return [('```json\n{"tool": "write_file", "args": {"path": "schema.sql", '
+                     '"content": "CREATE TABLE students(id INTEGER PRIMARY KEY, name TEXT);"}}\n```\n'
+                     '```json\n{"tool": "write_file", "args": {"path": "server.py", '
+                     '"content": "from http.server import HTTPServer"}}\n```')]
+        return ['```json\n{"tool": "done", "args": {"answer": "أُنشئت القاعدة والخادم"}}\n```']
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    ctx = ag.AgentContext(tmp_path, "t")
+    _final, ok = ag.run_agent(
+        "ابن لي موقعاً لمدارس بواجهة وخلفية وقاعدة بيانات وطريقة تسجيل",
+        ctx, [{}], lambda e: None, max_steps=8)
+    assert ok is True
+    assert (tmp_path / "server.py").is_file()        # the REAL layers landed
+    assert (tmp_path / "schema.sql").is_file()
+    assert (tmp_path / "index.html").is_file()
+    assert any("schema.sql" in c for c in calls[1:])  # the bounce fired once
+
+
+def test_simple_static_done_never_bounces(tmp_path, monkeypatch):
+    """Control: a task WITHOUT backend keywords accepts a static page —
+    the gate must not over-trigger."""
+    calls = []
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        calls.append(msgs[-1]["content"])
+        return [('```json\n{"tool": "write_file", "args": {"path": "landing.html", '
+                 '"content": "<h1>هبوط</h1>"}}\n```\n'
+                 '```json\n{"tool": "done", "args": {"answer": "تم"}}\n```')]
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    _final, ok = ag.run_agent("اكتب لي صفحة هبوط بسيطة",
+                              ag.AgentContext(tmp_path, "t"),
+                              [{}], lambda e: None, max_steps=6)
+    assert ok is True
+    assert (tmp_path / "landing.html").is_file()
+    assert len(calls) == 1                            # single wave, no bounce

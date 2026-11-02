@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>OS_V1 — وكيل أوس</title>
+<title>OS_V1 — مركز قيادة وكيل أوس</title>
 <style>
   :root { --bg:#0a0a0f; --panel:#12121c; --line:#23233a; --cyan:#00c8ff;
           --ok:#2bd576; --warn:#ffb020; --err:#ff5470; --text:#e8ecf4; --dim:#8b93a7; }
@@ -11,148 +11,336 @@
   body { margin:0; background:var(--bg); color:var(--text);
          font-family:"Segoe UI",Tahoma,sans-serif; min-height:100vh; }
   header { display:flex; align-items:center; justify-content:space-between;
-           padding:14px 22px; border-bottom:1px solid var(--line); }
-  header h1 { margin:0; font-size:18px; color:var(--cyan); }
+           padding:12px 22px; border-bottom:1px solid var(--line);
+           position:sticky; top:0; background:var(--bg); z-index:5; }
+  header h1 { margin:0; font-size:17px; color:var(--cyan); }
   #health { font-size:13px; color:var(--dim); }
   #health b { color:var(--ok); }
-  main { max-width:860px; margin:0 auto; padding:18px 16px 60px; }
-  .modes { display:flex; gap:8px; margin:14px 0 10px; flex-wrap:wrap; }
-  .chip { border:1px solid var(--line); background:var(--panel); color:var(--dim);
-          padding:7px 16px; border-radius:999px; cursor:pointer; font-size:14px; }
-  .chip.on { border-color:var(--cyan); color:var(--cyan); font-weight:600; }
-  textarea { width:100%; min-height:96px; background:var(--panel); color:var(--text);
+  nav { display:flex; gap:6px; padding:10px 22px 0; flex-wrap:wrap; }
+  nav .t { border:1px solid var(--line); background:var(--panel); color:var(--dim);
+           padding:8px 18px; border-radius:10px 10px 0 0; cursor:pointer; font-size:14px; }
+  nav .t.on { border-color:var(--cyan); color:var(--cyan); font-weight:700;
+              border-bottom:2px solid var(--cyan); }
+  main { max-width:900px; margin:0 auto; padding:14px 16px 70px; }
+  .pane { display:none; } .pane.on { display:block; }
+  textarea, input.txt { width:100%; background:var(--panel); color:var(--text);
              border:1px solid var(--line); border-radius:12px; padding:12px;
-             font:inherit; resize:vertical; }
+             font:inherit; }
+  textarea { min-height:88px; resize:vertical; }
+  input.txt { padding:10px 14px; }
   .row { display:flex; gap:10px; margin-top:10px; align-items:center; flex-wrap:wrap; }
   button.primary { background:var(--cyan); color:#031018; border:0; border-radius:10px;
                    padding:11px 26px; font-weight:700; cursor:pointer; font-size:15px; }
   button.primary:disabled { opacity:.5; cursor:wait; }
   button.ghost { background:transparent; color:var(--dim); border:1px solid var(--line);
                  border-radius:10px; padding:10px 18px; cursor:pointer; font-size:14px; }
+  .chip2 { border:1px solid var(--line); background:var(--panel); color:var(--dim);
+           padding:6px 14px; border-radius:999px; cursor:pointer; font-size:13px; }
+  .chip2.on { border-color:var(--cyan); color:var(--cyan); font-weight:700; }
   label.res { color:var(--dim); font-size:13px; display:flex; gap:6px; align-items:center; }
-  #session { background:var(--panel); color:var(--text); border:1px solid var(--line);
-             border-radius:8px; padding:6px 10px; font-size:12px; width:220px; }
-  #stream { margin-top:18px; }
-  .status { color:var(--dim); font-size:14px; padding:4px 0; border-bottom:1px dashed var(--line); }
-  .answer { background:var(--panel); border:1px solid var(--line); border-radius:12px;
-            padding:14px; margin-top:12px; white-space:pre-wrap; line-height:1.8; }
-  .done { margin-top:8px; font-size:13px; color:var(--ok); }
-  .audit { margin-top:14px; background:var(--panel); border:1px solid var(--line);
-           border-radius:12px; padding:14px; font-size:14px; line-height:1.9; }
-  .audit .v { font-size:16px; font-weight:700; }
-  .err { color:var(--err); }
+  #session { width:200px; }
+  .out { margin-top:14px; }
+  .status { color:var(--dim); font-size:14px; padding:4px 0;
+            border-bottom:1px dashed var(--line); }
+  .bubble { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+            padding:14px; margin:12px 0; white-space:pre-wrap; line-height:1.8; }
+  .me { border-color:var(--cyan); background:#0d1b26; }
+  .done { font-size:13px; color:var(--ok); margin-top:6px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px;
+           padding:14px; font-size:14px; line-height:1.9; }
+  .v { font-size:16px; font-weight:700; }
+  .err { color:var(--err); } .ok { color:var(--ok); } .dim { color:var(--dim); }
   .pulse { animation:p 1s infinite; } @keyframes p { 50% { opacity:.4; } }
+  #gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+             gap:10px; margin-top:12px; }
+  #gallery img, #gallery video { width:100%; border-radius:10px; border:1px solid var(--line); }
+  .recipe { border-bottom:1px dashed var(--line); padding:8px 0; }
+  .recipe b { color:var(--cyan); }
 </style>
 </head>
 <body>
 <header>
-  <h1>🤖 OS_V1 — وكيل أوس</h1>
+  <h1>🤖 OS_V1 — مركز قيادة وكيل أوس</h1>
   <div id="health">…</div>
 </header>
+<nav id="tabs">
+  <div class="t on" data-t="chat">💬 محادثة</div>
+  <div class="t" data-t="agent">🤖 وكيل</div>
+  <div class="t" data-t="media">🎨 وسائط</div>
+  <div class="t" data-t="sec">🛡️ الأمن</div>
+  <div class="t" data-t="lib">🧠 مكتبة التعلم</div>
+</nav>
 <main>
-  <div class="modes" id="modes">
-    <div class="chip on" data-m="solo">فردي</div>
-    <div class="chip" data-m="project">مشروع طويل</div>
-    <div class="chip" data-m="team">سرب وكلاء</div>
+
+<!-- ============ محادثة ============ -->
+<div class="pane on" id="p-chat">
+  <div id="chatlog" class="out"></div>
+  <div class="row">
+    <input class="txt" id="cmsg" placeholder="اسأل الوكيل أي شيء — الجواب يُبث حرفاً حرفاً…" />
+    <button class="primary" id="csend">إرسال</button>
+  </div>
+</div>
+
+<!-- ============ وكيل ============ -->
+<div class="pane" id="p-agent">
+  <div class="row" style="margin:6px 0">
+    <div class="chip2 on" data-m="solo">فردي</div>
+    <div class="chip2" data-m="project">مشروع طويل</div>
+    <div class="chip2" data-m="team">سرب وكلاء</div>
+    <label class="res"><input type="checkbox" id="full" /> أدوات الجهاز الكاملة</label>
   </div>
   <textarea id="task" placeholder="اكتب مهمتك… مثال: ابنِ موقعاً لمطعم فيه قائمة وأسعار ونموذج حجز — أو: حلل هذه المساحة واقترح تحسينات."></textarea>
   <div class="row">
     <button class="primary" id="go">شغّل المهمة</button>
     <button class="ghost" id="stop">إيقاف</button>
-    <button class="ghost" id="audit">🛡️ تدقيق أمني</button>
     <label class="res"><input type="checkbox" id="resume" /> استئناف جلسة</label>
-    <input id="session" placeholder="اسم الجلسة" />
+    <input class="txt" id="session" placeholder="اسم الجلسة" style="width:200px" />
   </div>
-  <div id="stream"></div>
-  <div id="auditbox"></div>
+  <div id="stream" class="out"></div>
+</div>
+
+<!-- ============ وسائط ============ -->
+<div class="pane" id="p-media">
+  <div class="panel">
+    <b>🖼️ صورة</b> — أداة مجانية سريعة (turbo). اكتب وصف المشهد:
+    <input class="txt" id="iprompt" placeholder="مثال: قهوة عربية على صحراء عند الغروب، إضاءة سينمائية" />
+    <div class="row">
+      <div class="chip2 on" data-sz="1024">مربعة 1024</div>
+      <div class="chip2" data-sz="wide">عريضة 1344×768</div>
+      <button class="primary" id="genimg">توليد الصورة</button>
+    </div>
+    <div id="iout" class="dim" style="margin-top:8px"></div>
+  </div>
+  <div class="panel" style="margin-top:12px">
+    <b>🎬 فيديو حقيقي</b> — مشهد واحد متحرك (يستغرق دقائق عبر Space مجاني؛ الحصة المجهولة تكفي 1-2 يومياً — التوكن المجاني يرفعها):
+    <input class="txt" id="vprompt" placeholder="مثال: كاميرا تقترب من فنجان قهوة والبخار يتصاعد" />
+    <div class="row"><button class="primary" id="genvid">توليد الفيديو</button></div>
+    <div id="vout" class="dim" style="margin-top:8px"></div>
+  </div>
+  <div class="row"><button class="ghost" id="refgallery">🔄 تحديث المعرض</button></div>
+  <div id="gallery"></div>
+</div>
+
+<!-- ============ أمن ============ -->
+<div class="pane" id="p-sec">
+  <div class="row">
+    <button class="primary" id="audit">🛡️ شغّل التدقيق الكامل</button>
+    <span class="dim">17 هجوماً على الدفاعات الحقيقية + فحص ثابت + تسجيل في دفتر التعلم</span>
+  </div>
+  <div id="auditbox" class="out"></div>
+</div>
+
+<!-- ============ مكتبة ============ -->
+<div class="pane" id="p-lib">
+  <div id="libbox" class="out panel">⏳ …</div>
+</div>
+
 </main>
 <script>
-const $ = s => document.querySelector(s);
-let mode = "solo", ctrl = null, session = "s_" + Date.now().toString(36);
-$("#session").value = session;
-
-document.querySelectorAll("#modes .chip").forEach(c => c.onclick = () => {
-  document.querySelectorAll("#modes .chip").forEach(x => x.classList.remove("on"));
-  c.classList.add("on"); mode = c.dataset.m;
-  if (mode === "project") $("#resume").checked = true;
-});
+const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
+let ctrl = null;
 
 fetch("/api/health").then(r => r.json()).then(h =>
   $("#health").innerHTML = "المحرك: <b>" + (h.status === "ok" ? "يعمل" : "متوقف") + "</b>")
   .catch(() => $("#health").innerHTML = "<span class='err'>الباكند غير متصل</span>");
 
-function line(txt, cls) {
+/* ---------- تبويبات ---------- */
+$$("#tabs .t").forEach(t => t.onclick = () => {
+  $$("#tabs .t").forEach(x => x.classList.remove("on"));
+  t.classList.add("on");
+  $$(".pane").forEach(p => p.classList.remove("on"));
+  $("#p-" + t.dataset.t).classList.add("on");
+  if (t.dataset.t === "lib") loadLib();
+  if (t.dataset.t === "media") refreshGallery();
+});
+
+function line(parent, txt, cls) {
   const d = document.createElement("div");
   d.className = cls || "status"; d.textContent = txt;
-  $("#stream").appendChild(d); return d;
+  parent.appendChild(d); return d;
 }
 
+/* ---------- محادثة (بث حي) ---------- */
+let cSession = "c_" + Date.now().toString(36);
+async function chat() {
+  const msg = $("#cmsg").value.trim();
+  if (!msg) return;
+  $("#cmsg").value = "";
+  const log = $("#chatlog");
+  line(log, "أنت: " + msg, "bubble me");
+  const b = line(log, "…", "bubble pulse");       // البث الحي يبدأ بسرعة (4.3 ث قياسياً)
+  try {
+    const res = await fetch("/api/v1/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ message: msg, model: "os_v1", session_id: cSession }) });
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done: end } = await reader.read();
+      if (end) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n"); buf = lines.pop();
+      for (const ln of lines) {
+        if (!ln.startsWith("data: ")) continue;
+        try {
+          const ev = JSON.parse(ln.slice(6));
+          if (ev.type === "delta" && ev.text) {
+            b.classList.remove("pulse");
+            b.textContent += ev.text;           // حرفاً حرفاً، بلا صمت
+          }
+        } catch {}
+      }
+    }
+  } catch (e) { b.classList.add("err"); b.textContent += "\nفشل: " + e; }
+  b.classList.remove("pulse");
+}
+$("#csend").onclick = chat;
+$("#cmsg").addEventListener("keydown", e => { if (e.key === "Enter") chat(); });
+
+/* ---------- وكيل ---------- */
+let mode = "solo", session = "s_" + Date.now().toString(36);
+$("#session").value = session;
+$$("#p-agent .chip2").forEach(c => c.onclick = () => {
+  $$("#p-agent .chip2").forEach(x => x.classList.remove("on"));
+  c.classList.add("on"); mode = c.dataset.m;
+  if (mode === "project") $("#resume").checked = true;
+});
 async function run() {
   const task = $("#task").value.trim();
-  if (!task) { line("اكتب مهمة أولاً.", "err"); return; }
+  if (!task) { line($("#stream"), "اكتب مهمة أولاً.", "err"); return; }
   if ($("#resume").checked) session = $("#session").value || session;
   else { session = "s_" + Date.now().toString(36); $("#session").value = session; }
-  $("#stream").innerHTML = ""; $("#auditbox").innerHTML = "";
+  $("#stream").innerHTML = "";
   const go = $("#go"); go.disabled = true; go.textContent = "يعمل…";
-  const pl = line("⏳ أرسلت المهمة إلى الوكيل…", "status pulse");
+  let pl = line($("#stream"), "⏳ أرسلت المهمة إلى الوكيل…", "status pulse");
   ctrl = new AbortController();
   try {
     const res = await fetch("/api/v1/agent/run", {
       method: "POST", signal: ctrl.signal,
       headers: { "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ task, session_id: session, device: "safe",
+      body: JSON.stringify({ task, session_id: session, device: $("#full").checked ? "full" : "safe",
                              mode, resume: $("#resume").checked }) });
     const reader = res.body.getReader(), dec = new TextDecoder();
-    let buf = "", ans = null, done = null;
+    let buf = "", finalShown = false;
     while (true) {
       const { value, done: end } = await reader.read();
       if (end) break;
       buf += dec.decode(value, { stream: true });
-      const lines = buf.split("\\n"); buf = lines.pop();
+      const lines = buf.split("\n"); buf = lines.pop();
       for (const ln of lines) {
         if (!ln.startsWith("data: ")) continue;
         let ev; try { ev = JSON.parse(ln.slice(6)); } catch { continue; }
         if (ev.type === "status") {
           pl.classList.remove("pulse");
-          line(ev.text);
-          pl = line("⏳ …", "status pulse");
-        } else if (ev.type === "delta") {
-          pl.remove();
-          ans = line(ev.text, "answer");
+          line($("#stream"), ev.text);
+          pl = line($("#stream"), "⏳ …", "status pulse");
+        } else if (ev.type === "delta" && !finalShown) {
+          pl.remove(); finalShown = true;
+          line($("#stream"), ev.text, "bubble");
         } else if (ev.type === "done") {
           pl.remove();
-          done = line("✅ " + (ev.engine || "") + " — خطوات: " +
-                (ev.agent_steps || 0) + " · أدوات: " +
-                ((ev.tools_used || []).join(", ") || "لا شيء"), "done");
+          line($("#stream"), "✅ " + (ev.engine || "") + " — خطوات: " +
+            (ev.agent_steps || 0) + " · أدوات: " +
+            ((ev.tools_used || []).join(", ") || "لا شيء"), "done");
         }
       }
     }
-    if (!done && ans) ans.after ? 0 : 0;
   } catch (e) {
-    if (e.name !== "AbortError") line("فشل الاتصال: " + e, "err");
+    if (e.name !== "AbortError") line($("#stream"), "فشل الاتصال: " + e, "err");
   }
   go.disabled = false; go.textContent = "شغّل المهمة";
 }
-
 $("#go").onclick = run;
 $("#stop").onclick = () => ctrl && ctrl.abort();
+
+/* ---------- وسائط ---------- */
+$$("#p-media .chip2").forEach(c => c.onclick = () => {
+  $$("#p-media .chip2").forEach(x => x.classList.remove("on"));
+  c.classList.add("on");
+});
+async function genImg() {
+  const prompt = $("#iprompt").value.trim();
+  if (!prompt) { $("#iout").textContent = "اكتب وصفاً أولاً"; return; }
+  const wide = document.querySelector("#p-media .chip2.on").dataset.sz === "wide";
+  $("#iout").textContent = "⏳ يولّد…";
+  try {
+    const r = await (await fetch("/api/v1/media/image", {
+      method: "POST", headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ prompt, width: wide ? 1344 : 1024, height: wide ? 768 : 1024 }) })).json();
+    $("#iout").textContent = r.ok ? "✅ " + r.observation : "❌ " + r.observation;
+    refreshGallery();
+  } catch (e) { $("#iout").textContent = "فشل: " + e; }
+}
+async function genVid() {
+  const prompt = $("#vprompt").value.trim();
+  if (!prompt) { $("#vout").textContent = "اكتب وصفاً أولاً"; return; }
+  $("#vout").textContent = "⏳ هذا يستغرق دقائق (فيديو حقيقي عبر Space) — لا تغلق الصفحة…";
+  try {
+    const r = await (await fetch("/api/v1/media/video", {
+      method: "POST", headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ prompt }) })).json();
+    $("#vout").textContent = r.ok ? "✅ " + r.observation : "❌ " + r.observation;
+    refreshGallery();
+  } catch (e) { $("#vout").textContent = "فشل: " + e; }
+}
+$("#genimg").onclick = genImg;
+$("#genvid").onclick = genVid;
+async function refreshGallery() {
+  const g = $("#gallery"); g.innerHTML = "";
+  try {
+    const r = await (await fetch("/api/v1/media/list")).json();
+    (r.list || []).slice(0, 24).forEach(item => {
+      const name = String(item).replace(/\\/g, "/").split("/").pop();
+      const m = name.match(/^(osv_(img|vid)_\d{8}_\d{6}\.(jpg|png|webp|gif|mp4)|osv_(mot|cine)_[0-9a-z]{8}\.mp4)$/);
+      if (!m) return;
+      if (m[2] === "img") {
+        const img = document.createElement("img");
+        img.src = "/api/v1/media/file/" + name; img.title = name; g.appendChild(img);
+      } else {
+        const v = document.createElement("video");
+        v.src = "/api/v1/media/file/" + name; v.controls = true; v.muted = true; g.appendChild(v);
+      }
+    });
+    if (!g.children.length) g.innerHTML = "<span class='dim'>لا وسائط بعد — ولّد أول صورة.</span>";
+  } catch (e) { g.innerHTML = "<span class='err'>فشل جلب المعرض: " + e + "</span>"; }
+}
+$("#refgallery").onclick = refreshGallery;
+
+/* ---------- أمن ---------- */
 $("#audit").onclick = async () => {
-  $("#auditbox").innerHTML = "<div class='audit'>⏳ تهاجم البطارية دفاعاتنا الحقيقية…</div>";
+  const box = $("#auditbox");
+  box.innerHTML = "<div class='panel'>⏳ تهاجم البطارية دفاعاتنا الحقيقية…</div>";
   try {
     const r = await (await fetch("/api/v1/security/audit")).json();
-    $("#auditbox").innerHTML =
-      "<div class='audit'><div class='v' style='color:" +
+    box.innerHTML = "<div class='panel'><div class='v' style='color:" +
       (r.battery.all_ok && r.static.real_clean ? "var(--ok)" : "var(--err)") +
       "'>" + r.verdict + "</div>" +
       "الهجمات المصدودة: " + r.battery.attacks + " · الضوابط: " + r.battery.controls +
       "<br>فحص ثابت: ملفات " + r.static.files_scanned +
       " — ثغرات حقيقية: " + r.static.real_count +
       " (قمع الهجمات المعلن: " + r.static.corpus_count + ")" +
-      "<br><span style='color:var(--dim)'>" + r.report + "</span></div>";
-  } catch (e) {
-    $("#auditbox").innerHTML = "<div class='audit err'>فشل التدقيق: " + e + "</div>";
-  }
+      "<br><span class='dim'>" + r.report + "</span></div>";
+  } catch (e) { box.innerHTML = "<div class='panel err'>فشل: " + e + "</div>"; }
 };
+
+/* ---------- مكتبة التعلم ---------- */
+async function loadLib() {
+  const box = $("#libbox");
+  try {
+    const r = await (await fetch("/api/v1/distill/stats")).json();
+    const s = r.stats || {};
+    let html = "المسارات المسجلة: <b>" + s.trajectories + "</b> · الناجحة: <b>" +
+      s.successful + "</b> · الوصفات المستخلصة: <b>" + s.recipes + "</b>" +
+      "<div class='dim'>هذه هي الطبقة المملوكة التي تنمو مع الاستخدام — بذرة النموذج الخاص.</div>";
+    (r.recipes || []).forEach(x => {
+      html += "<div class='recipe'><b>🧬 " + x.name + "</b><br>" +
+        x.steps.map((st, i) => (i + 1) + ") " + st).join(" → ") + "</div>";
+    });
+    if (!(r.recipes || []).length) html += "<div class='dim'>لا وصفات بعد — شغّل مهام ناجحة وستكتب المكتبة نفسها.</div>";
+    box.innerHTML = html;
+  } catch (e) { box.textContent = "فشل: " + e; }
+}
 </script>
 </body>
 </html>

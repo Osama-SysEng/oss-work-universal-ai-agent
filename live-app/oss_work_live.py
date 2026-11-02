@@ -2068,6 +2068,17 @@ def ui_home():
     return {"ok": False, "message": "الواجهة غير موجودة"}
 
 
+@app.get("/api/v1/distill/stats")
+def distill_stats():
+    """The owned learning library — what the agent distilled from its own
+    successful runs (the growing OS-model layer), read honestly."""
+    import osv_distill as ds
+    recipes = ds.load_recipes()[-8:][::-1]     # newest first, bounded
+    return {"ok": True, "stats": ds.stats(),
+            "recipes": [{"name": r.get("name", ""),
+                         "steps": r.get("steps", [])[:5]} for r in recipes]}
+
+
 def media_list_dir():
     import osv_media as md
     return md.media_dir()

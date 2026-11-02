@@ -38,7 +38,8 @@ MAX_FILE_CHARS = 12000
 # installs (bash.go:180-195) — plus the copy-whole-toolchain disaster we
 # actually caught a model doing (165MB xcopy of site-packages into the ws).
 _BASH_DENY = re.compile(
-    r"\b(rm\s+-rf\s+[/~]|\bformat\b|\bdel\s+/[sq]|shutdown|taskkill\s+/f\s+/im\s+"
+    r"\b(rm\s+-rf\s+[/~]|\bformat\b|\bdel\s+/[sq]|shutdown|taskkill"
+    r"|Stop-Process|stop-service|\bpkill\b|\bkillall\b|\bpowershell\b"
     r"|reg\s+delete|rmdir\s+/s|Remove-Item\s+-Recurse\s+-Force\s+C:\\|mkfs|dd\s+if="
     r"|\bxcopy\b|\brobocopy\b|Copy-Item\s+-Recurse|\bcp\s+-[a-z]*r[a-z]*\s+[A-Za-z]:\\\\"
     r"|\binstall\s+-g\b|npm\s+install\s+-g|pip\s+install\s+--user|pip\s+install\s+.*--target"

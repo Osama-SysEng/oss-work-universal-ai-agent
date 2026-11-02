@@ -1139,6 +1139,13 @@ def health():
     return {"status": "ok", "engine": engine_alive(), "ts": time.time()}
 
 
+@app.get("/health")
+def health_alias():
+    """Alias — something on this machine polls /health every few seconds;
+    the alias keeps it off the error log."""
+    return {"status": "ok", "engine": engine_alive(), "ts": time.time()}
+
+
 @app.get("/api/info", response_model=InfoResponse)
 def info():
     extract, _ = wiki_lookup("الرياضيات")

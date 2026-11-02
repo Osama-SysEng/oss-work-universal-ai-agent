@@ -126,6 +126,34 @@ def test_tool_bash_refuses_rce(tmp_path):
     assert not ok and "بوابة الأمن" in msg
 
 
+def test_tool_bash_refuses_self_kill_in_every_form(tmp_path):
+    """The 2 Nov backend death: the agent built a server.py, found port 8000
+    busy, and reached for process-killing — killing the host itself (python
+    killing python). A build NEVER needs taskkill/Stop-Process/pkill, so the
+    whole class is denied in all its forms."""
+    ctx = ag.AgentContext(tmp_path, "rb")
+    for cmd in ("taskkill /F /PID 1234",
+                "taskkill /F /IM python.exe",
+                "taskkill /IM python.exe",
+                "Stop-Process -Name python -Force",
+                "powershell -c \"Stop-Process -Name python\"",
+                "powershell Stop-Service spooler",
+                "pkill python",
+                "killall python"):
+        ok, msg = ag.tool_bash(ctx, cmd)
+        assert not ok, f"denied-list missed: {cmd}"
+        assert "مرفوض" in msg
+
+
+def test_tool_bash_still_allows_normal_build_commands(tmp_path):
+    """Control: the hardened deny-list must not over-trigger — the everyday
+    build verbs keep working (these RUN, not just pass the gate)."""
+    ctx = ag.AgentContext(tmp_path, "rb")
+    for cmd in ("dir", "python --version", "python -c \"print(6*7)\""):
+        ok, msg = ag.tool_bash(ctx, cmd)
+        assert ok, f"over-blocked a legal build command: {cmd} → {msg}"
+
+
 def test_tool_web_fetch_refuses_ssrf_before_any_network(tmp_path):
     ctx = ag.AgentContext(tmp_path, "rb")
     ok, msg = ag.tool_web_fetch(ctx, "http://169.254.169.254/latest/meta-data/")

@@ -152,49 +152,115 @@ const session = localStorage.osv_session ||
 $("#sname").value = session;
 let mode = "auto", busy = false;
 
-/* ============ الكرة ثلاثية الأبعاد (بلا اعتماديات) ============ */
+/* ============ حقل الجزيئات العلمي (بلا اعتماديات) ============
+   dynamique des fluides: انجراف في حقل تدفق متطبّق + شبكة بلكسوس (وصلات
+   بالمسافة) + نبضات طاقة عبر الوصلات (إطلاق عصبي) + عقد محورية + ذيول حركة */
 const cv = $("#orb"), cx = cv.getContext("2d");
-let W, H, mx = 0, my = 0, state3d = "idle";
+let W, H, mx = -99999, my = -99999, state3d = "idle";
 function size3d() { W = cv.width = innerWidth; H = cv.height = innerHeight; }
 addEventListener("resize", size3d); size3d();
-addEventListener("pointermove", e => {
-  mx = e.clientX / innerWidth - .5; my = e.clientY / innerHeight - .5;
-});
-const N = 460, PTS = [];
-for (let i = 0; i < N; i++) {
-  const y = 1 - (i / (N - 1)) * 2, rad = Math.sqrt(1 - y * y), th = i * 2.39996;
-  PTS.push([Math.cos(th) * rad, y, Math.sin(th) * rad]);
+addEventListener("pointermove", e => { mx = e.clientX; my = e.clientY; });
+document.addEventListener("mouseleave", () => { mx = my = -99999; });
+
+/* فيزياء الحالة: سرعة، لون، مدى الوصل، وتواتر النبضات */
+const ST8 = {
+  idle:  { c: [0, 200, 255],  spd: 1.0, link: 125, la: .15, sig: 2400 },
+  think: { c: [0, 225, 255],  spd: 1.8, link: 155, la: .26, sig: 800 },
+  build: { c: [43, 213, 118], spd: 2.3, link: 175, la: .30, sig: 420 },
+  err:   { c: [255, 84, 112], spd: 0.7, link: 100, la: .13, sig: 4200 },
+};
+const N = 190, P = [];
+function spawn() {
+  const a = Math.random() * 6.283, s = .15 + Math.random() * .5;
+  return { x: Math.random() * W, y: Math.random() * H,
+           vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+           r: .8 + Math.random() * 1.8, hub: Math.random() < .07,
+           ph: Math.random() * 6.283 };
 }
-const COLS = { idle:["#1c5f7d","#00c8ff"], think:["#00c8ff","#9feaff"],
-               build:["#1e9c5b","#7dffc0"], err:["#a03050","#ff8fae"] };
-let rotY = 0;
-function orb() {
-  const t = Date.now() / 1000;
-  rotY += state3d === "build" ? .011 : state3d === "think" ? .007 : .0025;
-  const [c1, c2] = COLS[state3d] || COLS.idle;
-  cx.clearRect(0, 0, W, H);
-  const pulse = state3d === "build" ? Math.sin(t * 5) * 10 : 0;
-  const R = Math.min(W, H) * .21 + pulse;
-  const ccx = W / 2 + mx * 46, ccy = H * .3 + my * 34;
-  const cY = Math.cos(rotY), sY = Math.sin(rotY), cX = Math.cos(.35), sX = Math.sin(.35);
-  for (const p of PTS) {
-    const x1 = p[0] * cY + p[2] * sY, z1 = -p[0] * sY + p[2] * cY;
-    const y1 = p[1] * cX - z1 * sX, z2 = p[1] * sX + z1 * cX;
-    const d = (z2 + 1) / 2, per = 1.9 - z2 * .55;
-    cx.globalAlpha = .1 + d * .6;
-    cx.fillStyle = d > .55 ? c2 : c1;
-    cx.beginPath();
-    cx.arc(ccx + x1 * R * per, ccy + y1 * R * per, d * 2.3, 0, 6.283);
-    cx.fill();
+for (let i = 0; i < N; i++) P.push(spawn());
+
+/* حقل تدفق رخيص بلا ضجيج بيرلين: طبقات جيبية متقاطعة = دوامات ناعمة */
+function flow(x, y, t) {
+  return [Math.sin(y * .0035 + t * .33) + Math.sin(y * .011 - t * .17) * .5,
+          Math.cos(x * .0038 - t * .27) + Math.cos(x * .012 + t * .19) * .5];
+}
+
+let SIGS = [], lastSig = 0;
+function field() {
+  const t = Date.now() / 1000, st = ST8[state3d] || ST8.idle;
+  const [cr, cg, cb] = st.c, spd = st.spd, L = st.link;
+  cx.fillStyle = "rgba(5,6,14,0.20)";          // ذيول: تلاشٍ جزئي بدل المسح
+  cx.fillRect(0, 0, W, H);
+
+  /* الحركة: تدفق + نفور من المؤشر + شد مركزي (عنقود مقيد) + تخميد */
+  for (const p of P) {
+    const f = flow(p.x, p.y, t);
+    p.vx += f[0] * .004 * spd; p.vy += f[1] * .004 * spd;
+    const dx = p.x - mx, dy = p.y - my, d2 = dx * dx + dy * dy;
+    if (d2 < 19600 && d2 > .01) {
+      const d = Math.sqrt(d2), f2 = (140 - d) / 140 * .4;
+      p.vx += dx / d * f2; p.vy += dy / d * f2;
+    }
+    p.vx += (W * .5 - p.x) * .000013;
+    p.vy += (H * .34 - p.y) * .000016;
+    p.vx *= .984; p.vy *= .984;
+    const v = Math.hypot(p.vx, p.vy), vm = .55 * spd + .5;
+    if (v > vm) { p.vx *= vm / v; p.vy *= vm / v; }
+    p.x += p.vx * spd; p.y += p.vy * spd;
+    if (p.x < -20) p.x = W + 20; else if (p.x > W + 20) p.x = -20;
+    if (p.y < -20) p.y = H + 20; else if (p.y > H + 20) p.y = -20;
   }
-  cx.globalAlpha = 1;
+
+  /* شبكة بلكسوس: وصلة بين كل جارتين داخل المدى، شفافيتها بالمسافة */
+  cx.lineWidth = 1;
+  for (let i = 0; i < N; i++) {
+    const a = P[i];
+    for (let j = i + 1; j < N; j++) {
+      const b = P[j], dx = a.x - b.x, dy = a.y - b.y, d2 = dx * dx + dy * dy;
+      if (d2 < L * L) {
+        const al = (1 - Math.sqrt(d2) / L) * st.la;
+        cx.strokeStyle = "rgba(" + cr + "," + cg + "," + cb + "," + al.toFixed(3) + ")";
+        cx.beginPath(); cx.moveTo(a.x, a.y); cx.lineTo(b.x, b.y); cx.stroke();
+      }
+    }
+  }
+
+  /* الجزيئات: وميض طوري + العقد المحورية بحلقة قياس */
+  for (const p of P) {
+    const tw = .55 + .45 * Math.sin(t * 2 + p.ph);
+    cx.fillStyle = "rgba(" + cr + "," + cg + "," + cb + "," + (.35 + .6 * tw).toFixed(3) + ")";
+    cx.beginPath(); cx.arc(p.x, p.y, p.r, 0, 6.283); cx.fill();
+    if (p.hub) {
+      cx.strokeStyle = "rgba(" + cr + "," + cg + "," + cb + "," + (.5 * tw).toFixed(3) + ")";
+      cx.beginPath(); cx.arc(p.x, p.y, p.r + 3.5, 0, 6.283); cx.stroke();
+    }
+  }
+
+  /* النبضات: حزمة طاقة تعبر وصلة عشوائية قريبة (إطلاق عصبي) */
+  if (t * 1000 - lastSig > st.sig) {
+    lastSig = t * 1000;
+    const a = P[(Math.random() * N) | 0];
+    let best = null, bd = 1e12;
+    for (const b of P) {
+      if (b === a) continue;
+      const d2 = (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+      if (d2 < bd && d2 < L * L) { bd = d2; best = b; }
+    }
+    if (best) SIGS.push({ a, b: best, t0: t });
+  }
+  SIGS = SIGS.filter(s => t - s.t0 < .9);
+  for (const s of SIGS) {
+    const k = (t - s.t0) / .9;
+    const x = s.a.x + (s.b.x - s.a.x) * k, y = s.a.y + (s.b.y - s.a.y) * k;
+    cx.fillStyle = "rgba(255,255,255," + (.9 * (1 - k)).toFixed(3) + ")";
+    cx.beginPath(); cx.arc(x, y, 1.6, 0, 6.283); cx.fill();
+  }
+
   $("#glow").style.background =
-    "radial-gradient(circle, " + (state3d === "build" ? "rgba(43,213,118,.12)"
-      : state3d === "think" ? "rgba(0,200,255,.14)" : "rgba(0,200,255,.08)")
-    + ", transparent 65%)";
-  requestAnimationFrame(orb);
+    "radial-gradient(circle, rgba(" + cr + "," + cg + "," + cb + ",.10), transparent 65%)";
+  requestAnimationFrame(field);
 }
-orb();
+field();
 function set3d(s) { state3d = s; }
 
 /* ============ الصحة ============ */

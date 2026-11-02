@@ -348,7 +348,11 @@ def system_prompt(task: str, table: dict | None = None) -> str:
         "8. أنت لست برنامجاً نصياً — لديك أدوات وسائط حقيقية: image_generate تولّد صوراً "
         "و video_generate يولّد مقاطع متحركة. إذا طلب المستخدم صورة أو فيديو أو مقطعاً أو "
         "شعاراً: أطلق الأداة فوراً في أول دورة (لكل مشهد/صورة وصفاً كاملاً مفصلاً بالألوان "
-        "والتفاصيل). ممنوع منعاً باتاً الاعتذار أو القول إنك نصي فقط أو أنك لا تستطيع توليد وسائط.")
+        "والتفاصيل). ممنوع منعاً باتاً الاعتذار أو القول إنك نصي فقط أو أنك لا تستطيع توليد وسائط.\n"
+        "9. الملف الكبير (صفحة HTML كاملة، CSS، فوق ~150 سطراً) يُكتب أجزاءً بأداة "
+        "long_write (part/total) — الأمر الذي يتجاوز حد الطول يُقطع في المنتصف ولا يُنفذ. "
+        "وكل write_file ملف واحد معقول؛ وابنِ المشاريع من ملفات متعددة صغيرة "
+        "(index.html + style.css منفصل) لا ملفاً واحداً ضخماً.")
 
 
 def _sig(name: str, args: dict) -> str:
@@ -385,7 +389,17 @@ def _tests_written(ws: Path, since: float) -> list[Path]:
     return out
 
 
-_ACTION_RX = re.compile(r"```json\s*(\{.*?\})\s*```", re.DOTALL)
+_ACTION_RX = re.compile(r"```\s*(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+
+def _looks_truncated_action(reply: str) -> bool:
+    """An action that STARTED (json fence or {"tool") but never closed —
+    cut by the token limit. Punishing it as 'prose' shipped the raw JSON
+    as a final answer (the live flaw of 2 Nov 2026)."""
+    r = (reply or "").strip()
+    if not r:
+        return False
+    return bool(re.search(r"```(json)?\s*\{", r)) or r.startswith('{"tool"')
 
 
 def parse_actions(text: str) -> list[dict]:
@@ -444,9 +458,10 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
     sigs: list[tuple[int, str]] = []       # (step, signature) — loop detection
     t0 = time.time()
     hard = task_weight(task) == "hard"
-    max_tok = 3500 if hard else 3000
-    loop_hinted = False                    # first loop → nudge, second → stop
-    selfcheck_bounced = False              # run-your-tests nudge fires once
+    max_tok = 8000 if hard else 6000       # a file-writing action needs ROOM —
+    loop_hinted = False                    # 3000 cut the JSON mid-content and
+    selfcheck_bounced = False              # shipped the raw text (2 Nov flaw)
+    truncation_hinted = False              # split-the-file nudge fires once
     fail_streak = 0                        # consecutive failed actions
     for step in range(1, steps_limit + 1):
         # Dual-process: hard tasks get FULL thinking on the planning step;
@@ -471,7 +486,7 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                 try:
                     reply = "".join(m._gw_stream(cfg, msgs, effort=None,
                                                  timeout=300,
-                                                 max_tokens=max(max_tok, 4000))
+                                                 max_tokens=max(max_tok, 9000))
                                     ).strip()
                     if reply:
                         break
@@ -482,6 +497,25 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
 
         acts = parse_actions(reply)
         if not acts:
+            # An action that started but never closed = cut by the token
+            # limit. Nudge a SPLIT once — never ship the raw JSON as text.
+            if _looks_truncated_action(reply):
+                if not truncation_hinted:
+                    truncation_hinted = True
+                    msgs.append({"role": "assistant",
+                                 "content": reply[:800]})
+                    msgs.append({"role": "user", "content":
+                                 "أمرك الأخير انقطع في المنتصف (تجاوز حد طول "
+                                 "الرد) فلم يُنفذ شيئاً. الملفات الكبيرة تُكتب "
+                                 "أجزاءً بأداة long_write بـ part/total — أو "
+                                 "اجعل كل write_file ملفاً صغيراً واحداً. "
+                                 "ابدأ الآن بالجزء الأول فقط."})
+                    continue
+                say({"type": "agent_step", "step": step, "tool": "none",
+                     "ok": False})
+                return (("توقفت: آخر أمر كان أكبر من حد طول الرد حتى بعد "
+                         "التوجيه بالتقسيم — لا شيء نُفذ في هذه الجولة. أعد "
+                         "المحاولة بمهمة أصغر أو بمطالب ملفات أصغر."), False)
             complied_streak += 1
             if complied_streak >= 2:
                 # the model keeps prose-ing instead of acting: accept its text

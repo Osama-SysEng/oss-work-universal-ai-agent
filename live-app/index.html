@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>OS_V1 — مركز قيادة وكيل أوس</title>
+<title>OSS Work — مركز قيادة الوكيل (النموذج OS_V1)</title>
 <style>
   :root { --bg:#0a0a0f; --panel:#12121c; --line:#23233a; --cyan:#00c8ff;
           --ok:#2bd576; --warn:#ffb020; --err:#ff5470; --text:#e8ecf4; --dim:#8b93a7; }
@@ -60,7 +60,7 @@
 </head>
 <body>
 <header>
-  <h1>🤖 OS_V1 — مركز قيادة وكيل أوس</h1>
+  <h1>🏗️ OSS Work — مركز قيادة الوكيل</h1>
   <div id="health">…</div>
 </header>
 <nav id="tabs">
@@ -141,7 +141,8 @@ const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s)
 let ctrl = null;
 
 fetch("/api/health").then(r => r.json()).then(h =>
-  $("#health").innerHTML = "المحرك: <b>" + (h.status === "ok" ? "يعمل" : "متوقف") + "</b>")
+  $("#health").innerHTML = "المحرك: <b>" + (h.status === "ok" ? "يعمل" : "متوقف")
+    + "</b> · النموذج: <b>OS_V1</b>")
   .catch(() => $("#health").innerHTML = "<span class='err'>الباكند غير متصل</span>");
 
 /* ---------- تبويبات ---------- */

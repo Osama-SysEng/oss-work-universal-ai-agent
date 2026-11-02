@@ -140,3 +140,70 @@ def test_hidden_failure_is_appended_to_final(tmp_path, monkeypatch):
     # ok=True (final text exists) but the failed bash step MUST surface
     assert "[ملاحظة النظام" in final
     assert ok is True
+
+
+# ------------------------------------------------- the 2 Nov 2026 live flaw
+
+def test_truncated_action_is_nudged_to_split_then_work_accepted(tmp_path, monkeypatch):
+    """A write_file action bigger than the token limit gets CUT mid-JSON →
+    parse fails → the loop used to ship the RAW JSON as the final answer with
+    ZERO steps (the user saw raw ```json text and nothing built). The fix:
+    one split-the-file nudge, then the retry lands real files."""
+    huge = '{"tool": "write_file", "args": {"path": "school.html", "content": "' \
+        + ("ب" * 5000)      # starts like a real action, never closes
+    calls = []
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        calls.append((msgs[-1]["content"], max_tokens))
+        if len(calls) == 1:
+            return ['```json\n' + huge]        # truncated mid-content
+        return ['```json\n{"tool": "write_file", "args": {"path": "index.html", '
+                '"content": "<h1>مدرسة</h1>"}}\n```\n'
+                '```json\n{"tool": "done", "args": {"answer": "بدأت الصفحة الرئيسية"}}\n```']
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    ctx = ag.AgentContext(tmp_path, "t")
+    final, ok = ag.run_agent("ابن لي موقعاً لمدارس", ctx, [{}], lambda e: None,
+                             max_steps=6)
+    assert ok is True                                   # the work LANDED
+    assert (tmp_path / "index.html").is_file()          # real file, not prose
+    assert "انقطع" in calls[1][0]                        # the split nudge was sent
+    assert not final.startswith("```json")              # raw JSON never shipped
+
+
+def test_repeated_truncation_dies_honestly_not_as_raw_json(tmp_path, monkeypatch):
+    """If the model keeps truncating even after the nudge, the loop dies with
+    an honest 'nothing executed' — the raw JSON is NEVER the answer."""
+    huge = '{"tool": "write_file", "args": {"path": "x.html", "content": "' \
+        + ("ب" * 5000)
+    calls = []
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        calls.append(msgs[-1]["content"])
+        return ['```json\n' + huge]                     # truncates forever
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    ctx = ag.AgentContext(tmp_path, "t")
+    final, ok = ag.run_agent("مهمة بناء", ctx, [{}], lambda e: None, max_steps=6)
+    assert ok is False
+    assert "لا شيء نُفذ" in final
+    assert "```json" not in final                       # never the raw command
+
+
+def test_hard_build_gets_real_token_room(tmp_path, monkeypatch):
+    """Root cause of the flaw: 3000-3500 max_tokens cannot hold a real HTML
+    file. A build task must reserve room for the file itself."""
+    seen = []
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        seen.append(max_tokens)
+        return ['```json\n{"tool": "done", "args": {"answer": "تم"}}\n```']
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    ag.run_agent("ابنِ مشروعاً كاملاً: واجهة + خلفية + اختبارات", _ctx(tmp_path),
+                 [{}], lambda e: None, max_steps=2)
+    assert seen[0] >= 8000
+
+
+def test_parse_actions_tolerates_fence_without_json_tag():
+    assert ag.parse_actions('```\n{"tool": "bash", "args": {"command": "dir"}}\n```')

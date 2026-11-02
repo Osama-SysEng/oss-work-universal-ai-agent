@@ -550,24 +550,26 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
             # engine's ctx=8192 caps completions hard — a big single command
             # will ALWAYS re-cut, so nudge 2 teaches the actual physics).
             if _looks_truncated_action(reply):
-                if truncation_count < 2:
+                if truncation_count < 3:
                     truncation_count += 1
                     msgs.append({"role": "assistant",
                                  "content": reply[:800]})
-                    if truncation_count == 1:
-                        nudge = ("أمرك الأخير انقطع في المنتصف (تجاوز حد طول "
-                                 "الرد) فلم يُنفذ شيئاً. الملفات الكبيرة تُكتب "
-                                 "أجزاءً بأداة long_write بـ part/total — أو "
-                                 "اجعل كل write_file ملفاً صغيراً واحداً. "
-                                 "ابدأ الآن بالجزء الأول فقط.")
-                    else:
-                        nudge = ("انقطع مرة ثانية — وهذه حقيقة فيزيائية لا "
-                                 "تُقاوَم بالإعادة: المحرك المحلي سياقه 8192 "
-                                 "توكن فقط، وأمرٌ يتجاوز ~800 توكن إخراجاً "
-                                 "سيُقطع دائماً. الحل الوحيد أجزاء أصغر بكثير: "
-                                 "كل part لا يتجاوز 50 سطراً، واكتب أصغر نسخة "
-                                 "عاملة من كل ملف ثم أكمله بجزء لاحق. أكمل "
-                                 "الآن من حيث توقفت بجزء صغير جداً.")
+                    nudge = [
+                        "أمرك الأخير انقطع في المنتصف (تجاوز حد طول الرد) "
+                        "فلم يُنفذ شيئاً. الملفات الكبيرة تُكتب أجزاءً بأداة "
+                        "long_write بـ part/total — أو اجعل كل write_file "
+                        "ملفاً صغيراً واحداً. ابدأ الآن بالجزء الأول فقط.",
+                        "انقطع مرة ثانية — وهذه حقيقة فيزيائية لا تُقاوَم "
+                        "بالإعادة: المحرك المحلي سياقه 8192 توكن فقط، وأمرٌ "
+                        "يتجاوز ~800 توكن إخراجاً سيُقطع دائماً. الحل الوحيد "
+                        "أجزاء أصغر بكثير: كل part لا يتجاوز 50 سطراً، واكتب "
+                        "أصغر نسخة عاملة من كل ملف ثم أكمله بجزء لاحق. أكمل "
+                        "الآن من حيث توقفت بجزء صغير جداً.",
+                        "انقطع ثلاث مرات. أنجز الآن أصغر جزء ممكن — سطراً "
+                        "واحداً إذا لزم — وأصدر done بتقرير صادق عمّا بُني "
+                        "فعلاً وعما بقي. الاكتمال عبر استئناف المهمة نفسها "
+                        "(المساحة محفوظة) لا بجولة واحدة بطول خيالي.",
+                    ][truncation_count - 1]
                     msgs.append({"role": "user", "content": nudge})
                     continue
                 say({"type": "agent_step", "step": step, "tool": "none",
@@ -576,10 +578,14 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                 credit = (" الملفات التي أُنجزت فعلاً في المساحة: "
                           + ", ".join(landed)) if landed else \
                          " لم يُنفذ شيء في المساحة."
+                layers = (" طبقات النظام الثلاثي موجودة فعلاً في المساحة — "
+                          "استأنف المهمة نفسها (المساحة محفوظة) وأكمل ما "
+                          "بقي بدل البدء من الصفر."
+                          if _wants_fullstack(task)
+                          and _has_backend(ctx.workspace) else "")
                 return (("توقفت: آخر أمر كان أكبر من حد طول الرد حتى بعد "
                          "التوجيه بالتقسيم — لا شيء نُفذ في هذه الجولة."
-                         + credit + " أعد المحاولة بمهمة أصغر أو بمطالب "
-                         "ملفات أصغر."), False)
+                         + credit + layers), False)
             complied_streak += 1
             if complied_streak >= 2:
                 # the model keeps prose-ing instead of acting: accept its text

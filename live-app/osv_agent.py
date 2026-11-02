@@ -355,11 +355,17 @@ def system_prompt(task: str, table: dict | None = None) -> str:
         "وكل write_file ملف واحد معقول؛ وابنِ المشاريع من ملفات متعددة صغيرة "
         "(index.html + style.css منفصل) لا ملفاً واحداً ضخماً.\n"
         "10. طلب موقع/تطبيق فيه تسجيل أو حسابات أو بيانات أو خلفية = نظام كامل "
-        "ثلاثي الطبقات — صفحة ثابتة وحدها تُرفض: (أ) schema.sql بجداول واضحة + "
-        "تنفيذ حقيقي بـ sqlite3 عبر bash، (ب) server.py بمكتبة http.server "
-        "القياسية (endpoints تقرأ وتكتب القاعدة، JSON داخلاً وخارجاً)، (ج) "
-        "الواجهة تستدعي الـAPI بـ fetch. واختبر تسجيلاً فعلياً بأداة bash قبل "
-        "الإنهاء — ناتج الأمر الحقيقي هو الدليل.")
+        "ثلاثي الطبقات — صفحة ثابتة وحدها تُرفض: (أ) schema.sql بجداول واضحة، "
+        "ثم init_db.py (سكربت صغير يقرأ schema.sql وينشئ القاعدة بمكتبة "
+        "sqlite3 القياسية) وتنفّذه بـ python init_db.py عبر bash — أمر sqlite3 "
+        "المنفصل غير متوفر على ويندوز فلا تستخدمه، (ب) server.py بمكتبة "
+        "http.server القياسية (endpoints تقرأ وتكتب القاعدة، JSON داخلاً "
+        "وخارجاً)، (ج) الواجهة تستدعي الـAPI بـ fetch. واختبر تسجيلاً "
+        "فعلياً قبل الإنهاء — ناتج الأمر الحقيقي هو الدليل.\n"
+        "11. كل المسارات نسبية إلى مساحة العمل — المساحة نفسها هي جذر المشروع. "
+        "ممنوع المسارات المطلقة (C:\\...) أو مجلدات خارجها: تُرفض فوراً.\n"
+        "12. ممنوع python -c بعبارات مقتبسة (اقتباسات cmd المتداخلة تكسرها) — "
+        "اكتب السكربت ملفاً بـ write_file ونفّذه بـ python file.py.")
 
 
 def _sig(name: str, args: dict) -> str:
@@ -420,14 +426,27 @@ def _has_backend(ws) -> bool:
         return False
 
 
+def _ws_files(ws, k: int = 8) -> list[str]:
+    """Relative names of what actually landed in the workspace — honest-death
+    messages credit real work instead of implying nothing exists."""
+    try:
+        return sorted(str(p.relative_to(ws)) for p in ws.rglob("*")
+                      if p.is_file() and not p.name.endswith(".pyc"))[:k]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _looks_truncated_action(reply: str) -> bool:
     """An action that STARTED (json fence or {"tool") but never closed —
     cut by the token limit. Punishing it as 'prose' shipped the raw JSON
-    as a final answer (the live flaw of 2 Nov 2026)."""
+    as a final answer (the live flaw of 2 Nov 2026). An ODD count of ```
+    markers is also a cut: a fence opened and never closed."""
     r = (reply or "").strip()
     if not r:
         return False
-    return bool(re.search(r"```(json)?\s*\{", r)) or r.startswith('{"tool"')
+    if re.search(r"```(json)?\s*\{", r) or r.startswith('{"tool"'):
+        return True
+    return r.count("```") % 2 == 1
 
 
 def parse_actions(text: str) -> list[dict]:
@@ -542,9 +561,14 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                     continue
                 say({"type": "agent_step", "step": step, "tool": "none",
                      "ok": False})
+                landed = _ws_files(ctx.workspace)
+                credit = (" الملفات التي أُنجزت فعلاً في المساحة: "
+                          + ", ".join(landed)) if landed else \
+                         " لم يُنفذ شيء في المساحة."
                 return (("توقفت: آخر أمر كان أكبر من حد طول الرد حتى بعد "
-                         "التوجيه بالتقسيم — لا شيء نُفذ في هذه الجولة. أعد "
-                         "المحاولة بمهمة أصغر أو بمطالب ملفات أصغر."), False)
+                         "التوجيه بالتقسيم — لا شيء نُفذ في هذه الجولة."
+                         + credit + " أعد المحاولة بمهمة أصغر أو بمطالب "
+                         "ملفات أصغر."), False)
             complied_streak += 1
             if complied_streak >= 2:
                 # the model keeps prose-ing instead of acting: accept its text
@@ -637,13 +661,16 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                              "الاكتمال مرفوض: طلب المستخدم نظاماً كامل الطبقات "
                              "وأنشأت واجهة فقط. ابنِ البقية فعلياً:\n"
                              "1) قاعدة بيانات: ملف schema.sql بجداول واضحة، "
-                             "ثم نفّذ بأداة bash أمراً حقيقياً ينشئ قاعدة "
-                             "sqlite3 منها (المكتبة القياسية — بلا تثبيت).\n"
+                             "ثم init_db.py — سكربت صغير يقرأ schema.sql وينشئ "
+                             "القاعدة بمكتبة sqlite3 القياسية — ونفّذه بـ "
+                             "python init_db.py عبر bash (أمر sqlite3 المنفصل "
+                             "غير متوفر على ويندوز — لا تستخدمه).\n"
                              "2) خلفية: ملف server.py بمكتبة http.server "
                              "القياسية — endpoints للتسجيل والجلب تقرأ وتكتب "
                              "القاعدة الفعلية (JSON داخلاً وخارجاً).\n"
-                             "3) اختبر بأداة bash: سجّل مستخدماً ثم اجلبه — "
-                             "ناتج الأمر الحقيقي هو الدليل.\n"
+                             "3) اختبر بمسار صلب: سكربت test_db.py يستدعي "
+                             "الـendpoints أو يُدخل مستخدماً ويجلبه — ناتج "
+                             "التنفيذ الحقيقي هو الدليل.\n"
                              "4) الواجهة تستدعي الـAPI بـ fetch — ممنوع "
                              "بيانات وهمية داخل HTML."})
                 continue

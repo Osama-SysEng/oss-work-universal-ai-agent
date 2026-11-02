@@ -252,6 +252,34 @@ def test_fullstack_done_is_bounced_until_backend_exists(tmp_path, monkeypatch):
     assert any("schema.sql" in c for c in calls[1:])  # the bounce fired once
 
 
+# ------------------------------------------------- honest death credits work
+
+def test_ws_files_lists_relative_names_not_pyc(tmp_path):
+    (tmp_path / "server.py").write_text("x", encoding="utf-8")
+    (tmp_path / "__pycache__").mkdir()
+    (tmp_path / "__pycache__" / "server.cpython-314.pyc").write_text(
+        "x", encoding="utf-8")
+    assert ag._ws_files(tmp_path) == ["server.py"]
+
+
+def test_truncation_death_credits_what_landed(tmp_path, monkeypatch):
+    """The 2 Nov live death said 'nothing executed' while server.py and
+    schema.sql sat in the workspace — honest failure must credit real work."""
+    huge = "x" * 40000
+    calls = []
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        calls.append(msgs[-1]["content"])
+        return ['```json\n' + huge]          # always truncated
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    (tmp_path / "server.py").write_text("s", encoding="utf-8")
+    final, ok = ag.run_agent("مهمة", ag.AgentContext(tmp_path, "t"), [{}],
+                             lambda e: None, max_steps=5)
+    assert ok is False                        # honest death, no fake success
+    assert "server.py" in final               # ...but credits what DID land
+
+
 def test_simple_static_done_never_bounces(tmp_path, monkeypatch):
     """Control: a task WITHOUT backend keywords accepts a static page —
     the gate must not over-trigger."""

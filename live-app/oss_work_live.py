@@ -48,7 +48,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 import osv_gateway
@@ -1771,6 +1771,205 @@ class AgentRequest(BaseModel):
     resume: bool = False   # true = اكمل جلسة محفوظة بنفس الاسم (سياق + مساحة كما هي)
 
 
+# ---------------------------------------------------------------------------
+# Shared agent pipeline: ONE implementation of setup + run + gates + learning,
+# consumed by two doors: /agent/run (legacy SSE) and /agent/start (background
+# job — survives the tab, streams live). Duplicating this body = divergence
+# bug factory; both doors MUST call the same functions.
+# ---------------------------------------------------------------------------
+
+def _agent_setup(req: AgentRequest):
+    """Everything both run doors need before the loop: chain, workspace,
+    device kit, merged tools, learned brief, resume prior. None = no chain."""
+    import osv_agent as ag
+    import osv_device as dv
+    import osv_team as tm
+    import osv_memory as mem
+    import osv_media as md
+    import osv_sec as sec
+    import osv_mcp
+    import osv_git
+    import osv_longio
+    import osv_sessions as sessions
+    import osv_distill
+
+    chain = cloud_chain(task="code")
+    if not chain:
+        return None
+    ws = Path(os.environ.get("TEMP", ".")) / "osv_agent_ws" / \
+        re.sub(r"[^a-zA-Z0-9_-]", "_", req.session_id)[:40]
+    kit = dv.DeviceKit(yolo=(req.device == "full"))
+    kit.gate.engine._log("agent.run", f"device:{req.device}", "allow", "policy")
+    extra = dv.device_tools(kit)
+    brief = memory_brief_for(req.task)
+    extra.update(md.media_tools(md.MediaKit()))
+    extra.update(sec.sec_tools())
+    extra.update(osv_mcp.mcp_tools())
+    extra.update(osv_git.git_tools())
+    extra.update(osv_longio.longio_tools())
+    prior = sessions.resume_msgs(req.session_id) if req.resume else None
+    resumed_turns = len(prior) if prior else 0
+    brief = (brief + "\n" + osv_distill.inject(
+        osv_distill.recipes_for(req.task))).strip()
+    return {"chain": chain, "ws": ws, "kit": kit, "extra": extra,
+            "brief": brief, "prior": prior, "resumed_turns": resumed_turns,
+            "ag": ag, "tm": tm, "mem": mem, "sessions": sessions,
+            "osv_distill": osv_distill}
+
+
+def _done_evt(ok: bool, steps_n: int, tools_used: list,
+              team_info: dict | None) -> dict:
+    return {"type": "done",
+            "engine": f"OS_V1🤖({'اكتمل' if ok else 'غير مكتمل'})"
+                      + ("👥 سرب" if team_info else ""),
+            "agent_steps": steps_n, "tools_used": tools_used,
+            **({"team": team_info} if team_info else {})}
+
+
+def _agent_execute(setup: dict, req: AgentRequest, on_event) -> dict:
+    """The whole run: mode dispatch + verify/behavior gates + owned learning +
+    session save. on_event(dict) fires THE MOMENT anything happens — the job
+    door streams it live; the legacy door collects it."""
+    ag, tm = setup["ag"], setup["tm"]
+    ws, chain = setup["ws"], setup["chain"]
+    extra, brief, prior = setup["extra"], setup["brief"], setup["prior"]
+    mem, sessions = setup["mem"], setup["sessions"]
+    osv_distill = setup["osv_distill"]
+
+    ctx = ag.AgentContext(ws, req.session_id,
+                          extra_tools={**extra, **tm.team_tool()})
+    ctx.chain = chain
+    t_run_start = time.time()
+    final, ok, team_info = None, False, None
+    if req.mode == "team":
+        # workers get every tool EXCEPT team_spawn (no recursive swarms)
+        res = tm.run_team(req.task, ws, req.session_id, chain, extra,
+                          on_event, brief)
+        if res is not None:
+            final, ok, team_info = res
+    if req.mode == "project":
+        # long-horizon: goal → milestones → tasks, persisted per task,
+        # resumable by the same session_id, gated per product
+        import osv_project as pj
+        doc = pj.load(req.session_id)
+        if doc is None:
+            doc = pj.plan(req.task, chain, _gw_stream)
+        if doc is None:
+            final, ok = ("تعذرت صياغة خطة مشروع — لا خطة وهمية. أعد "
+                         "المحاولة بصياغة أوضح للهدف.", False)
+        else:
+            if not pj.load(req.session_id):
+                pj.save(req.session_id, doc)
+                on_event({"type": "status", "stage": "project",
+                          "text": f"🗺️ خطة «{doc['name']}»: "
+                                  f"{len(doc['milestones'])} مراحل — "
+                                  f"{pj.status(doc)['tasks_total']} مهمة"})
+            doc = pj.run_project(req.session_id, doc, chain, ws.parent,
+                                 on_event, extra, brief)
+            st = doc["status"]
+            final = (f"المشروع «{st['name']}»: {st['tasks_done']} مكتملة، "
+                     f"{st['tasks_failed']} فاشلة، {st['tasks_pending']} "
+                     f"متبقية من {st['tasks_total']} — استأنف بنفس "
+                     f"session_id و resume=true.")
+            ok = st["tasks_failed"] == 0 and st["tasks_pending"] == 0
+    if final is None:
+        # solo — أو تراجع صادق بعد رفض التفكيك (الفريق لا يُزيَّف أبداً)
+        final, ok = ag.run_agent(req.task, ctx, chain, on_event,
+                                 memory_brief=brief, prior_msgs=prior)
+
+    # --- بوابة التحقق التلقائية (الدقة لا تُوكل للنموذج): كل بايثون كُتب في
+    # هذه الجولة يُترجم فعلياً؛ جولة إصلاح واحدة بحد أقصى، والنتيجة تُروى كما هي
+    if ok and req.mode != "team" and any(ws.rglob("*.py")):
+        on_event({"type": "status", "stage": "verify",
+                  "text": "🔍 بوابة التحقق: تترجم كل ملفات بايثون في المساحة..."})
+        errs = tm.ws_py_errors(ws, since=t_run_start)
+        if errs:
+            on_event({"type": "status", "stage": "heal",
+                      "text": f"⚠️ اصطادت البوابة {len(errs)} خطأ تركيب — جولة إصلاح..."})
+            hfinal, _hok = ag.run_agent(
+                "بوابة التحقق اصطادت أخطاء تركيب في ملفات مساحة عملك — أصلحها "
+                "ثم أعد الفحص بنفسك قبل أن تعلن الانتهاء:\n"
+                + "\n".join(errs[:5]), ctx, chain, on_event, memory_brief=brief)
+            errs2 = tm.ws_py_errors(ws, since=t_run_start)
+            if errs2:
+                final = ((hfinal or final) + "\n\n⚠️ ما زالت أخطاء التركيب قائمة "
+                         "بعد جولة الإصلاح: " + " | ".join(e[:150] for e in errs2[:3]))
+                ok = False
+            else:
+                final = ((hfinal or final)
+                         + f"\n✅ البوابة: شُفئت الأخطاء — كل ملفات بايثون ({len(list(ws.rglob('*.py')))}) تُترجم الآن بنجاح")
+        else:
+            final += (f"\n✅ بوابة التحقق: {len(list(ws.rglob('*.py')))} ملف بايثون "
+                      "تُترجم بنجاح")
+
+    # behavioral gate (solo): الاختبارات المكتوبة تُشغَّل فعلاً — الترجمة
+    # وحدها كانت تنجّي كوداً خاطئ المنطق، والسلوك هو الحقيقة
+    if ok and req.mode != "team":
+        test_files = [p for p in list(ws.rglob("test_*.py"))
+                      + list(ws.rglob("*_test.py"))
+                      if p.stat().st_mtime >= t_run_start - 5]
+        if test_files:
+            on_event({"type": "status", "stage": "behavior",
+                      "text": f"🧪 بوابة السلوك: تشغّل {len(test_files)} "
+                              "اختباراً كُتبت في هذه الجولة..."})
+            berrs = tm.ws_behavior_errors(ws, since=t_run_start)
+            if berrs:
+                on_event({"type": "status", "stage": "heal",
+                          "text": "⚠️ اختبارات تفشل — جولة إصلاح المنطق..."})
+                hfinal, _hok = ag.run_agent(
+                    "بوابة السلوك اصطادت اختبارات فاشلة — الكود يُترجم لكن "
+                    "المنطق خاطئ. أصلح المنطق حتى تنجح الاختبارات فعلاً:\n"
+                    + "\n".join(berrs[:3]), ctx, chain, on_event,
+                    memory_brief=brief)
+                berrs2 = tm.ws_behavior_errors(ws, since=t_run_start)
+                if berrs2:
+                    final = ((hfinal or final)
+                             + "\n\n⚠️ اختبارات ما زالت تفشل بعد الإصلاح: "
+                             + " | ".join(e[:180] for e in berrs2[:2]))
+                    ok = False
+                else:
+                    final = ((hfinal or final)
+                             + f"\n✅ بوابة السلوك: شُفي المنطق — "
+                             f"{len(test_files)} اختباراً ينفذ وينجح الآن")
+            else:
+                final += (f"\n✅ بوابة السلوك: {len(test_files)} اختباراً "
+                          "نُفذ ونجح فعلاً")
+
+    tools_used = sorted({s["tool"] for s in ctx.steps})
+    steps_n = (len(ctx.steps) or (team_info and sum(
+        (s or {}).get("steps", 0) for s in team_info["streams"])) or 0)
+
+    # --- التعلم من الجولة: سجل المسار (بذرة SFT) + استخلاص وصفة إن تأهلت
+    # (نجاح بملفات ≥2 → نداء واحد رخيص؛ الفشل هنا لا يكسل الخدمة أبداً)
+    if req.mode == "solo":
+        try:
+            files = [p.relative_to(ws).as_posix() for p in ws.rglob("*")
+                     if p.is_file() and "context_pack" not in p.name][:20]
+            osv_distill.record_trajectory(req.task, ok, tools_used,
+                                          files, final or "")
+            if ok:
+                osv_distill.distill_from_run(req.task, files, chain,
+                                             _gw_stream)
+        except Exception:  # noqa: BLE001 — learning must not break serving
+            pass
+
+    # --- حفظ الجلسة: الاستئناف لاحقاً يبدأ من هذه المحادثة بالضبط
+    # (solo فقط — سرب له شجرة سياقات خاصة به، حفظها جزئي كذب)
+    if req.mode != "team":
+        try:
+            sessions.save(req.session_id, req.task, ctx.msgs, ws)
+        except Exception:  # noqa: BLE001 — persistence must not break serving
+            pass
+
+    try:
+        mem.record_run(req.task, ok, tools_used, steps_n, (final or "")[:200])
+    except Exception:  # noqa: BLE001 — learning must never break serving
+        pass
+
+    return {"final": final, "ok": ok, "steps": steps_n,
+            "tools": tools_used, "team": team_info}
+
+
 @app.post("/api/v1/agent/run")
 def agent_run(req: AgentRequest):
     """Full agent mode: the model works with REAL tools (bash/files/search)
@@ -1778,203 +1977,184 @@ def agent_run(req: AgentRequest):
     device=full adds the DEVICE-LEVEL tools (OpenClaw-style reach: any file,
     any command, processes, notifications) under the permission engine —
     yolo on, but the hard-deny machine-killer class stays absolute."""
-    import osv_agent as ag
-    import osv_device as dv
-    import osv_team as tm
-
-    chain = cloud_chain(task="code")
-    if not chain:
+    setup = _agent_setup(req)
+    if setup is None:
         return {"ok": False, "message": "الوضع الوكيل يحتاج مزوداً سحابياً (⚙️)."}
-    ws = Path(os.environ.get("TEMP", ".")) / "osv_agent_ws" / \
-        re.sub(r"[^a-zA-Z0-9_-]", "_", req.session_id)[:40]
-    kit = dv.DeviceKit(yolo=(req.device == "full"))
-    kit.gate.engine._log("agent.run", f"device:{req.device}", "allow", "policy")
-    extra = dv.device_tools(kit)
-
-    # --- the learning layer (Copilot-style): retrieve, then inject, then record
-    import osv_memory as mem
-    brief = memory_brief_for(req.task)
-    # --- media tools (image/video generation) — keyless, merge always
-    import osv_media as md
-    extra.update(md.media_tools(md.MediaKit()))
-    # --- security scanner (read-only, always merged)
-    import osv_sec as sec
-    extra.update(sec.sec_tools())
-    # --- MCP: external tool servers the user configured (stdio, honest errors)
-    import osv_mcp
-    extra.update(osv_mcp.mcp_tools())
-    # --- git: the agent checkpoints its own work inside its workspace
-    import osv_git
-    extra.update(osv_git.git_tools())
-    # --- long-io: million-token lanes (workspace dossier + part-stitched files)
-    import osv_longio
-    extra.update(osv_longio.longio_tools())
-    # --- sessions: resume support
-    import osv_sessions as sessions
-    prior = sessions.resume_msgs(req.session_id) if req.resume else None
-    resumed_turns = len(prior) if prior else 0
-    # --- distill: owned recipes retrieved for THIS task (the growing model)
-    import osv_distill
-    brief = (brief + "\n" + osv_distill.inject(
-        osv_distill.recipes_for(req.task))).strip()
 
     def gen():
         yield _sse({"type": "status", "stage": "agent",
-                    "text": f"🤖 وضع الوكيل: مساحة عمل {ws.name} — أدوات حقيقية بأمان"
+                    "text": f"🤖 وضع الوكيل: مساحة عمل {setup['ws'].name} — أدوات حقيقية بأمان"
                             + (" + تحكم الجهاز الكامل" if req.device == "full" else "")
-                            + (" + 🧠 ذاكرة متعلَّمة" if brief else "")
-                            + (" + 🔌 MCP" if any("mcp" in t for t in extra) else "")
-                            + (f" + 📂 استئناف ({resumed_turns} رسالة من آخر جلسة)"
-                               if prior else "")
+                            + (" + 🧠 ذاكرة متعلَّمة" if setup["brief"] else "")
+                            + (" + 🔌 MCP" if any("mcp" in t for t in setup["extra"]) else "")
+                            + (f" + 📂 استئناف ({setup['resumed_turns']} رسالة من آخر جلسة)"
+                               if setup["prior"] else "")
                             + (" + 👥 سرب متوازٍ" if req.mode == "team" else "")})
         events = []
-        ctx = ag.AgentContext(ws, req.session_id,
-                              extra_tools={**extra, **tm.team_tool()})
-        ctx.chain = chain
-
-        def on_event(evt):
-            events.append(evt)
-
-        t_run_start = time.time()
-        final, ok, team_info = None, False, None
-        if req.mode == "team":
-            # workers get every tool EXCEPT team_spawn (no recursive swarms)
-            res = tm.run_team(req.task, ws, req.session_id, chain, extra,
-                              lambda e: events.append(e), brief)
-            if res is not None:
-                final, ok, team_info = res
-        if req.mode == "project":
-            # long-horizon: goal → milestones → tasks, persisted per task,
-            # resumable by the same session_id, gated per product
-            import osv_project as pj
-            doc = pj.load(req.session_id)
-            if doc is None:
-                doc = pj.plan(req.task, chain, _gw_stream)
-            if doc is None:
-                final, ok = ("تعذرت صياغة خطة مشروع — لا خطة وهمية. أعد "
-                             "المحاولة بصياغة أوضح للهدف.", False)
-            else:
-                if not pj.load(req.session_id):
-                    pj.save(req.session_id, doc)
-                    yield _sse({"type": "status", "stage": "project",
-                                "text": f"🗺️ خطة «{doc['name']}»: "
-                                        f"{len(doc['milestones'])} مراحل — "
-                                        f"{pj.status(doc)['tasks_total']} مهمة"})
-                doc = pj.run_project(req.session_id, doc, chain, ws.parent,
-                                     on_event, extra, brief)
-                st = doc["status"]
-                final = (f"المشروع «{st['name']}»: {st['tasks_done']} مكتملة، "
-                         f"{st['tasks_failed']} فاشلة، {st['tasks_pending']} "
-                         f"متبقية من {st['tasks_total']} — استأنف بنفس "
-                         f"session_id و resume=true.")
-                ok = st["tasks_failed"] == 0 and st["tasks_pending"] == 0
-        if final is None:
-            # solo — أو تراجع صادق بعد رفض التفكيك (الفريق لا يُزيَّف أبداً)
-            final, ok = ag.run_agent(req.task, ctx, chain, on_event,
-                                     memory_brief=brief, prior_msgs=prior)
-
-        # --- بوابة التحقق التلقائية (الدقة لا تُوكل للنموذج): كل بايثون كُتب في
-        # هذه الجولة يُترجم فعلياً؛ جولة إصلاح واحدة بحد أقصى، والنتيجة تُروى كما هي
-        if ok and req.mode != "team" and any(ws.rglob("*.py")):
-            yield _sse({"type": "status", "stage": "verify",
-                        "text": "🔍 بوابة التحقق: تترجم كل ملفات بايثون في المساحة..."})
-            errs = tm.ws_py_errors(ws, since=t_run_start)
-            if errs:
-                yield _sse({"type": "status", "stage": "heal",
-                            "text": f"⚠️ اصطادت البوابة {len(errs)} خطأ تركيب — جولة إصلاح..."})
-                hfinal, _hok = ag.run_agent(
-                    "بوابة التحقق اصطادت أخطاء تركيب في ملفات مساحة عملك — أصلحها "
-                    "ثم أعد الفحص بنفسك قبل أن تعلن الانتهاء:\n"
-                    + "\n".join(errs[:5]), ctx, chain, on_event, memory_brief=brief)
-                errs2 = tm.ws_py_errors(ws, since=t_run_start)
-                if errs2:
-                    final = ((hfinal or final) + "\n\n⚠️ ما زالت أخطاء التركيب قائمة "
-                             "بعد جولة الإصلاح: " + " | ".join(e[:150] for e in errs2[:3]))
-                    ok = False
-                else:
-                    final = ((hfinal or final)
-                             + f"\n✅ البوابة: شُفئت الأخطاء — كل ملفات بايثون ({len(list(ws.rglob('*.py')))}) تُترجم الآن بنجاح")
-            else:
-                final += (f"\n✅ بوابة التحقق: {len(list(ws.rglob('*.py')))} ملف بايثون "
-                          "تُترجم بنجاح")
-
-        # behavioral gate (solo): الاختبارات المكتوبة تُشغَّل فعلاً — الترجمة
-        # وحدها كانت تنجّي كوداً خاطئ المنطق، والسلوك هو الحقيقة
-        if ok and req.mode != "team":
-            test_files = [p for p in list(ws.rglob("test_*.py"))
-                          + list(ws.rglob("*_test.py"))
-                          if p.stat().st_mtime >= t_run_start - 5]
-            if test_files:
-                yield _sse({"type": "status", "stage": "behavior",
-                            "text": f"🧪 بوابة السلوك: تشغّل {len(test_files)} "
-                                    "اختباراً كُتبت في هذه الجولة..."})
-                berrs = tm.ws_behavior_errors(ws, since=t_run_start)
-                if berrs:
-                    yield _sse({"type": "status", "stage": "heal",
-                                "text": "⚠️ اختبارات تفشل — جولة إصلاح المنطق..."})
-                    hfinal, _hok = ag.run_agent(
-                        "بوابة السلوك اصطادت اختبارات فاشلة — الكود يُترجم لكن "
-                        "المنطق خاطئ. أصلح المنطق حتى تنجح الاختبارات فعلاً:\n"
-                        + "\n".join(berrs[:3]), ctx, chain, on_event,
-                        memory_brief=brief)
-                    berrs2 = tm.ws_behavior_errors(ws, since=t_run_start)
-                    if berrs2:
-                        final = ((hfinal or final)
-                                 + "\n\n⚠️ اختبارات ما زالت تفشل بعد الإصلاح: "
-                                 + " | ".join(e[:180] for e in berrs2[:2]))
-                        ok = False
-                    else:
-                        final = ((hfinal or final)
-                                 + f"\n✅ بوابة السلوك: شُفي المنطق — "
-                                 f"{len(test_files)} اختباراً ينفذ وينجح الآن")
-                else:
-                    final += (f"\n✅ بوابة السلوك: {len(test_files)} اختباراً "
-                              "نُفذ ونجح فعلاً")
-
-        tools_used = sorted({s["tool"] for s in ctx.steps})
-
-        # --- التعلم من الجولة: سجل المسار (بذرة SFT) + استخلاص وصفة إن تأهلت
-        # (نجاح بملفات ≥2 → نداء واحد رخيص؛ الفشل هنا لا يكسل الخدمة أبداً)
-        if req.mode == "solo":
-            try:
-                files = [p.relative_to(ws).as_posix() for p in ws.rglob("*")
-                         if p.is_file() and "context_pack" not in p.name][:20]
-                osv_distill.record_trajectory(req.task, ok, tools_used,
-                                              files, final or "")
-                if ok:
-                    osv_distill.distill_from_run(req.task, files, chain,
-                                                 _gw_stream)
-            except Exception:  # noqa: BLE001 — learning must not break serving
-                pass
-
-        # --- حفظ الجلسة: الاستئناف لاحقاً يبدأ من هذه المحادثة بالضبط
-        # (solo فقط — سرب له شجرة سياقات خاصة به، حفظها جزئي كذب)
-        if req.mode != "team":
-            try:
-                sessions.save(req.session_id, req.task, ctx.msgs, ws)
-            except Exception:  # noqa: BLE001 — persistence must not break serving
-                pass
-
-        try:
-            mem.record_run(req.task, ok, tools_used,
-                           len(ctx.steps) or (team_info and sum(
-                               (s or {}).get("steps", 0)
-                               for s in team_info["streams"])) or 0,
-                           (final or "")[:200])
-        except Exception:  # noqa: BLE001 — learning must never break serving
-            pass
+        res = _agent_execute(setup, req, lambda e: events.append(e))
         for evt in events:
             yield _sse(evt)
-        yield _sse({"type": "delta", "text": final})
-        yield _sse({"type": "done",
-                    "engine": f"OS_V1🤖({'اكتمل' if ok else 'غير مكتمل'})"
-                              + ("👥 سرب" if team_info else ""),
-                    "agent_steps": len(ctx.steps) or (
-                        team_info and sum((s or {}).get("steps", 0)
-                                          for s in team_info["streams"])) or 0,
-                    "tools_used": tools_used,
-                    **({"team": team_info} if team_info else {})})
+        yield _sse({"type": "delta", "text": res["final"]})
+        yield _sse(_done_evt(res["ok"], res["steps"], res["tools"],
+                             res["team"]))
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+# ---------------------------------------------------------------------------
+# Background agent jobs — the run SURVIVES the tab (the 2 Nov flaw: the UI
+# showed nothing until the end, the user closed the tab, and the disconnect
+# killed a 7-file school-site build seconds before it finished). The worker
+# runs the SAME _agent_execute the legacy door runs — zero duplication — and
+# every event lands in the job record the moment it happens; any number of
+# viewers drain it live or reattach later.
+# ---------------------------------------------------------------------------
+
+JOBS: dict[str, dict] = {}
+_JOBS_LOCK = threading.Lock()
+_JOB_SEQ = 0
+
+
+def _agent_job_worker(job_id: str, req: "AgentRequest") -> None:
+    job = JOBS.get(job_id)
+    if job is None:
+        return
+    try:
+        setup = _agent_setup(req)
+        if setup is None:
+            job["events"].append({"type": "delta", "text":
+                                  "الوضع الوكيل يحتاج مزوداً سحابياً (⚙️)."})
+            job["result"] = {"ok": False}
+            return
+        res = _agent_execute(setup, req,
+                             lambda e: job["events"].append(e))
+        job["events"].append({"type": "delta", "text": res["final"]})
+        evt = _done_evt(res["ok"], res["steps"], res["tools"], res["team"])
+        job["events"].append(evt)
+        eng = evt.get("engine") or ""
+        job["result"] = {"ok": "اكتمل" in eng and "غير مكتمل" not in eng,
+                         "steps": res["steps"], "tools": res["tools"]}
+    except Exception as exc:  # noqa: BLE001 — the job reports its own death
+        job["events"].append({"type": "delta",
+                              "text": f"⚠️ تعطلت المهمة: {exc}"})
+        job["result"] = {"ok": False}
+    finally:
+        job["state"] = "done"
+
+
+def _new_job(req: "AgentRequest") -> str:
+    global _JOB_SEQ
+    with _JOBS_LOCK:
+        _JOB_SEQ += 1
+        job_id = f"j{int(time.time())}-{_JOB_SEQ}"
+        JOBS[job_id] = {"task": req.task, "state": "running",
+                        "started": time.time(), "events": [], "result": None}
+    threading.Thread(target=_agent_job_worker, args=(job_id, req),
+                     daemon=True, name=f"agent-job-{job_id}").start()
+    return job_id
+
+
+@app.post("/api/v1/agent/start")
+def agent_start(req: AgentRequest):
+    """Fire an agent run in the background — returns the job id immediately.
+    The UI streams /agent/stream/{job_id} and can close freely."""
+    return {"ok": True, "job_id": _new_job(req)}
+
+
+@app.get("/api/v1/agent/stream/{job_id}")
+def agent_job_stream(job_id: str):
+    """Live SSE drain of a job's events — replays history first (reattach),
+    then follows the run event-by-event as it happens."""
+    def gen():
+        idx, last_beat = 0, time.time()
+        while True:
+            with _JOBS_LOCK:
+                job = JOBS.get(job_id)
+                if job is None:
+                    yield _sse({"type": "error", "text": "مهمة غير موجودة"})
+                    return
+                evts = job["events"][idx:]
+                state = job["state"]
+                idx += len(evts)
+            for evt in evts:
+                yield _sse(evt)
+                last_beat = time.time()
+            if state == "done" and not evts:
+                return
+            if time.time() - last_beat > 15:
+                yield ": keepalive\n\n"
+                last_beat = time.time()
+            time.sleep(0.4)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.get("/api/v1/agent/jobs")
+def agent_jobs():
+    with _JOBS_LOCK:
+        items = [{"id": jid, "task": (j["task"] or "")[:80],
+                  "state": j["state"], "started": j["started"],
+                  "events": len(j["events"])}
+                 for jid, j in sorted(JOBS.items(),
+                                      key=lambda kv: -kv[1]["started"])]
+    return {"ok": True, "jobs": items[:20]}
+
+
+@app.get("/api/v1/agent/jobs/{job_id}")
+def agent_job_get(job_id: str):
+    with _JOBS_LOCK:
+        job = JOBS.get(job_id)
+        if job is None:
+            return {"ok": False, "message": "لا مهمة بهذا المعرف"}
+        return {"ok": True, "id": job_id, "state": job["state"],
+                "started": job["started"], "result": job["result"],
+                "task": job["task"], "events": job["events"][:]}
+
+
+_PREVIEW_EXT = {".html", ".htm", ".css", ".js", ".png", ".jpg", ".jpeg",
+                ".webp", ".gif", ".svg", ".json", ".txt", ".ico"}
+
+
+def _session_ws(session_id: str) -> Path:
+    return Path(os.environ.get("TEMP", ".")) / "osv_agent_ws" / \
+        re.sub(r"[^a-zA-Z0-9_-]", "_", session_id)[:40]
+
+
+@app.get("/api/v1/agent/preview/{session_id}/{fpath:path}")
+def agent_preview(session_id: str, fpath: str = ""):
+    """Serve the BUILT site from the session workspace — the «أعطني رابط
+    التجربة» ask. Traversal-guarded (resolved paths must stay inside the
+    session workspace) and extension-whitelisted."""
+    ws = _session_ws(session_id).resolve()
+    target = (ws / fpath).resolve() if fpath else ws
+    if target != ws and not str(target).startswith(str(ws) + os.sep):
+        return JSONResponse({"ok": False, "message": "مسار غير مسموح"},
+                            status_code=403)
+    if not target.exists():
+        return JSONResponse({"ok": False, "message": "لا شيء مبني بعد"},
+                            status_code=404)
+    if target.is_dir():
+        idx = target / "index.html"
+        if idx.exists():
+            target = idx
+        else:
+            pages = [p for p in sorted(target.rglob("*.html")) if p.is_file()]
+            if not pages:
+                return JSONResponse({"ok": False,
+                                     "message": "لا صفحات مبنية بعد"},
+                                    status_code=404)
+            rows = "".join(
+                '<a href="/api/v1/agent/preview/' + session_id + "/"
+                + p.relative_to(ws).as_posix() + '">' + p.stem + "</a><br>"
+                for p in pages[:40])
+            return HTMLResponse("<!DOCTYPE html><html lang='ar' dir='rtl'>"
+                                "<meta charset='utf-8'><body style='background:#0a0a0f;"
+                                "color:#e8ecf4;font-family:sans-serif;font-size:18px'>"
+                                "<h3 style='color:#00c8ff'>صفحات الموقع المبني:</h3>"
+                                + rows + "</body></html>")
+    if target.suffix.lower() not in _PREVIEW_EXT:
+        return JSONResponse({"ok": False, "message": "نوع غير مسموح"},
+                            status_code=404)
+    return FileResponse(target)
 
 
 # --- memory cache: index once per TTL, recall cheaply on every run ----------

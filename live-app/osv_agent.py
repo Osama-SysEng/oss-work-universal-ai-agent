@@ -508,9 +508,9 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
     max_tok = 8000 if hard else 6000       # a file-writing action needs ROOM —
     loop_hinted = False                    # 3000 cut the JSON mid-content and
     selfcheck_bounced = False              # shipped the raw text (2 Nov flaw)
-    truncation_hinted = False              # split-the-file nudge fires once
-    fs_bounced = False                     # fullstack completeness bounce (once)
-    fail_streak = 0                        # consecutive failed actions
+    truncation_count = 0                   # 2 escalating nudges, then honest
+    fs_bounced = False                     # death (engine ctx 8192 caps output
+    fail_streak = 0                        # hard — big single commands always cut)
     for step in range(1, steps_limit + 1):
         # Dual-process: hard tasks get FULL thinking on the planning step;
         # execution steps run fast; struggling (fail_streak) re-engages full
@@ -546,18 +546,29 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
         acts = parse_actions(reply)
         if not acts:
             # An action that started but never closed = cut by the token
-            # limit. Nudge a SPLIT once — never ship the raw JSON as text.
+            # limit. Nudge a SPLIT twice with escalating precision (the local
+            # engine's ctx=8192 caps completions hard — a big single command
+            # will ALWAYS re-cut, so nudge 2 teaches the actual physics).
             if _looks_truncated_action(reply):
-                if not truncation_hinted:
-                    truncation_hinted = True
+                if truncation_count < 2:
+                    truncation_count += 1
                     msgs.append({"role": "assistant",
                                  "content": reply[:800]})
-                    msgs.append({"role": "user", "content":
-                                 "أمرك الأخير انقطع في المنتصف (تجاوز حد طول "
+                    if truncation_count == 1:
+                        nudge = ("أمرك الأخير انقطع في المنتصف (تجاوز حد طول "
                                  "الرد) فلم يُنفذ شيئاً. الملفات الكبيرة تُكتب "
                                  "أجزاءً بأداة long_write بـ part/total — أو "
                                  "اجعل كل write_file ملفاً صغيراً واحداً. "
-                                 "ابدأ الآن بالجزء الأول فقط."})
+                                 "ابدأ الآن بالجزء الأول فقط.")
+                    else:
+                        nudge = ("انقطع مرة ثانية — وهذه حقيقة فيزيائية لا "
+                                 "تُقاوَم بالإعادة: المحرك المحلي سياقه 8192 "
+                                 "توكن فقط، وأمرٌ يتجاوز ~800 توكن إخراجاً "
+                                 "سيُقطع دائماً. الحل الوحيد أجزاء أصغر بكثير: "
+                                 "كل part لا يتجاوز 50 سطراً، واكتب أصغر نسخة "
+                                 "عاملة من كل ملف ثم أكمله بجزء لاحق. أكمل "
+                                 "الآن من حيث توقفت بجزء صغير جداً.")
+                    msgs.append({"role": "user", "content": nudge})
                     continue
                 say({"type": "agent_step", "step": step, "tool": "none",
                      "ok": False})

@@ -275,9 +275,10 @@ def test_truncation_death_credits_what_landed(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "_gw_stream", fake_gw)
     (tmp_path / "server.py").write_text("s", encoding="utf-8")
     final, ok = ag.run_agent("مهمة", ag.AgentContext(tmp_path, "t"), [{}],
-                             lambda e: None, max_steps=5)
+                             lambda e: None, max_steps=8)
     assert ok is False                        # honest death, no fake success
     assert "server.py" in final               # ...but credits what DID land
+    assert any("8192" in c for c in calls)    # 2nd nudge teaches the physics
 
 
 def test_simple_static_done_never_bounces(tmp_path, monkeypatch):

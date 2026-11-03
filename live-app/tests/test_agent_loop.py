@@ -3,6 +3,8 @@
 Converted from the measured session of 1 Nov 2026 (lessons 38-40) into the
 permanent regression suite. Everything runs OFFLINE (the LLM is mocked)."""
 
+import json
+
 import oss_work_live as m
 import osv_agent as ag
 
@@ -279,6 +281,88 @@ def test_truncation_death_credits_what_landed(tmp_path, monkeypatch):
     assert ok is False                        # honest death, no fake success
     assert "server.py" in final               # ...but credits what DID land
     assert any("8192" in c for c in calls)    # 2nd nudge teaches the physics
+
+
+# ---------------------------------------------------------------- smoke gate
+
+GOOD_SERVER = '''from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+
+class H(BaseHTTPRequestHandler):
+    def _j(self, code, obj):
+        b = json.dumps(obj).encode()
+        self.send_response(code)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(b)))
+        self.end_headers()
+        self.wfile.write(b)
+
+    def do_GET(self):
+        self._j(200, {"ok": True})
+
+    def do_POST(self):
+        if self.path == '/api/register':
+            n = int(self.headers.get('Content-Length', 0))
+            d = json.loads(self.rfile.read(n))
+            self._j(200, {"registered": d["email"]})
+        else:
+            self._j(404, {"error": "not found"})
+
+    def log_message(self, *a):
+        pass
+
+if __name__ == '__main__':
+    HTTPServer(('', 8000), H).serve_forever()
+'''
+
+DEADLOCK_SERVER = GOOD_SERVER.replace(
+    "            n = int(self.headers.get('Content-Length', 0))\n"
+    "            d = json.loads(self.rfile.read(n))",
+    "            d = json.loads(self.rfile.read())")   # the live 3 Nov bug
+
+
+def test_smoke_test_boots_and_probes_a_working_server(tmp_path):
+    ok, detail = ag._smoke_test(_ws_with(tmp_path, GOOD_SERVER))
+    assert ok, detail
+
+
+def test_smoke_test_catches_the_live_rfile_deadlock(tmp_path):
+    ok, detail = ag._smoke_test(_ws_with(tmp_path, DEADLOCK_SERVER))
+    assert not ok
+    assert "علّق" in detail or "فشلاً" in detail
+
+
+def _ws_with(ws, server_src: str):
+    d = ws / "school_site"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "server.py").write_text(server_src, encoding="utf-8")
+    return ws
+
+
+def test_fullstack_done_with_broken_server_is_bounced_then_fixed(
+        tmp_path, monkeypatch):
+    """The smoke gate in the loop: wave 1 ships the DEADLOCK server + done →
+    the gate bounces with the mechanical finding; wave 2 fixes it → done is
+    accepted because the REAL smoke passes."""
+    calls = []
+    dead = json.dumps(DEADLOCK_SERVER)
+    good = json.dumps(GOOD_SERVER)
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        calls.append(msgs[-1]["content"])
+        src = good if len(calls) >= 2 else dead
+        return [('```json\n{"tool": "write_file", "args": {"path": '
+                 '"school_site/server.py", "content": ' + src + '}}\n```\n'
+                 '```json\n{"tool": "done", "args": {"answer": "تم بناء '
+                 'النظام"}}\n```')]
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    _final, ok = ag.run_agent(
+        "ابن لي موقعاً لمدارس بواجهة وخلفية وقاعدة بيانات وتسجيل",
+        ag.AgentContext(tmp_path, "t"), [{}], lambda e: None, max_steps=8)
+    assert ok is True
+    assert (tmp_path / "school_site" / "server.py").is_file()
+    assert any("بوابة الدخان" in c for c in calls[1:])   # bounce fired once
 
 
 def test_simple_static_done_never_bounces(tmp_path, monkeypatch):

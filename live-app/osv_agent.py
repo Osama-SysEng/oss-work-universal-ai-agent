@@ -436,6 +436,124 @@ def _ws_files(ws, k: int = 8) -> list[str]:
         return []
 
 
+# ---------------------------------------------------------------- smoke gate
+# The model kept dying by truncation BEFORE it could ever test its own build,
+# and the live E2E of its artifact found a real deadlock (rfile.read() without
+# Content-Length). So the LOOP — not the model — boots a COPY of the built
+# server on a free port and probes it over real HTTP. Same risk class as
+# tool_bash, which already runs arbitrary commands inside this workspace.
+
+SMOKE_BOOT_S = 6
+SMOKE_REQ_S = 4
+
+
+def _smoke_test(ws) -> tuple[bool, str]:
+    """Boot the workspace's runnable server (a copy, port-rebound) and probe
+    it. Returns (ok, detail); ok=True also when nothing is bootable — the
+    artifact gate above already handles the missing-backend case."""
+    import shutil
+    import socket
+    import subprocess
+    import sys
+    import tempfile
+    import time
+    import urllib.error
+    import urllib.request
+
+    try:
+        runnable = [p for p in ws.rglob("server.py")
+                    if "serve_forever" in p.read_text(encoding="utf-8",
+                                                      errors="replace")]
+    except OSError:
+        return True, ""
+    if not runnable:
+        return True, ""          # a server.py that never binds = not smokeable
+    src = runnable[0]
+    s = socket.socket()
+    s.bind(("", 0))
+    port = s.getsockname()[1]
+    s.close()
+    tmp = Path(tempfile.mkdtemp(prefix="osv_smoke_"))
+    proc = None
+    try:
+        site = tmp / "site"
+        shutil.copytree(src.parent, site, dirs_exist_ok=True)
+        f = site / src.name
+        code = f.read_text(encoding="utf-8", errors="replace")
+        patched = re.sub(
+            r"\(\s*(['\"])((?:127\.0\.0\.1|0\.0\.0\.0)?)\1\s*,\s*(\d{4,5})\s*\)",
+            lambda m: f"({m.group(1)}{m.group(2)}{m.group(1)}, {port})", code)
+        f.write_text(patched, encoding="utf-8")
+        env = dict(_BASH_ENV)
+        env["PORT"] = str(port)
+        proc = subprocess.Popen([sys.executable, f.name], cwd=str(site),
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, env=env)
+        alive = False
+        for _ in range(int(SMOKE_BOOT_S / 0.3)):
+            if proc.poll() is not None:
+                break
+            sk = socket.socket()
+            sk.settimeout(0.3)
+            try:
+                sk.connect(("127.0.0.1", port))
+                alive = True
+            except OSError:
+                pass
+            finally:
+                sk.close()
+            if alive:
+                break
+            time.sleep(0.3)
+        if not alive:
+            out = (proc.stdout.read(2000).decode("utf-8", "replace")
+                   if proc.stdout else "")
+            return (False, "الخادم لا يستجيب بعد الإقلاع على منفذ "
+                    + str(port) + (". ناتج التشغيل: " + out[:280]
+                                   if out.strip() else ""))
+        base = f"http://127.0.0.1:{port}"
+        try:
+            urllib.request.urlopen(base + "/", timeout=SMOKE_REQ_S)
+        except urllib.error.HTTPError:
+            pass                       # any HTTP reply = the server answers
+        except Exception as e:  # noqa: BLE001
+            return False, f"الخادم يقبل الاتصال ولا يُجيب HTTP: {e}"
+        m = re.search(r"['\"](/[^'\"]*regist[^'\"]*)['\"]", patched,
+                      re.IGNORECASE)
+        if m:
+            path = m.group(1)
+            body = json.dumps({"name": "smoke", "email": "smoke@test.local",
+                               "password": "Smoke1234",
+                               "role": "student"}).encode()
+            req = urllib.request.Request(
+                base + path, data=body,
+                headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=SMOKE_REQ_S) as r:
+                    if r.status >= 300:
+                        return (False, (f"endpoint التسجيل {path} ردّ "
+                                        f"{r.status} بدل 2xx"))
+            except urllib.error.HTTPError as e:
+                return (False, (f"endpoint التسجيل {path} ردّ فشلاً {e.code} — "
+                                "أصلح المعالج (القراءة الصحيحة: length=int("
+                                "self.headers.get('Content-Length', 0)) ثم "
+                                "self.rfile.read(length) — القراءة بدون طول "
+                                "تعلّق) واختبره بنفسك قبل الإنهاء"))
+            except Exception as e:  # noqa: BLE001
+                return (False, f"endpoint التسجيل {path} علّق بلا جواب: {e} — "
+                        "القراءة الصحيحة: length=int(self.headers.get("
+                        "'Content-Length', 0)) ثم self.rfile.read(length)")
+        return True, ""
+    finally:
+        if proc is not None:
+            proc.terminate()
+            try:
+                proc.wait(3)
+            except Exception:  # noqa: BLE001
+                proc.kill()
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def _looks_truncated_action(reply: str) -> bool:
     """An action that STARTED (json fence or {"tool") but never closed —
     cut by the token limit. Punishing it as 'prose' shipped the raw JSON
@@ -508,9 +626,10 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
     max_tok = 8000 if hard else 6000       # a file-writing action needs ROOM —
     loop_hinted = False                    # 3000 cut the JSON mid-content and
     selfcheck_bounced = False              # shipped the raw text (2 Nov flaw)
-    truncation_count = 0                   # 2 escalating nudges, then honest
-    fs_bounced = False                     # death (engine ctx 8192 caps output
-    fail_streak = 0                        # hard — big single commands always cut)
+    truncation_count = 0                   # escalating nudges before honest
+    fs_bounced = False                     # death: engine ctx 8192 caps output
+    smoke_bounced = 0                      # hard — big single commands always cut
+    fail_streak = 0                        # consecutive failed actions
     for step in range(1, steps_limit + 1):
         # Dual-process: hard tasks get FULL thinking on the planning step;
         # execution steps run fast; struggling (fail_streak) re-engages full
@@ -691,6 +810,28 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                              "4) الواجهة تستدعي الـAPI بـ fetch — ممنوع "
                              "بيانات وهمية داخل HTML."})
                 continue
+
+            # SMOKE GATE (3 Nov user approval): the layers EXIST — do they
+            # actually WORK? The loop itself boots the built server on a
+            # free port and probes registration over real HTTP. The model
+            # kept dying by truncation before ever testing its build, and
+            # the live artifact had a real deadlock. Two bounces max, then
+            # accept with mandatory disclosure.
+            if _wants_fullstack(task) and smoke_bounced < 2:
+                smoke_ok, smoke_detail = _smoke_test(ctx.workspace)
+                if not smoke_ok:
+                    smoke_bounced += 1
+                    if smoke_bounced < 2:
+                        msgs.append({"role": "assistant", "content": reply})
+                        msgs.append({"role": "user", "content":
+                                     "بوابة الدخان رفضت الاكتمال — فحص "
+                                     "ميكانيكي حقيقي شغّل خادمك على منفذ حر:\n"
+                                     + smoke_detail
+                                     + "\nأصلح الخلل فعلياً بـ write_file ثم "
+                                     "أنهِ ليُعاد الفحص."})
+                        continue
+                    final += ("\n\n[إفصاح نظامي]: فحص الدخان ما زال يفشل: "
+                              + smoke_detail)
 
             # الصدق لا يُوكل للنموذج (OSS law): أي تحذير ⚠️ أو فشل في ملاحظات
             # الأدوات يُلحق بالرد النهائي إلزاماً — النموذج لا يستطيع إخفاء

@@ -4,6 +4,7 @@ Converted from the measured session of 1 Nov 2026 (lessons 38-40) into the
 permanent regression suite. Everything runs OFFLINE (the LLM is mocked)."""
 
 import json
+import time
 
 import oss_work_live as m
 import osv_agent as ag
@@ -369,6 +370,37 @@ def test_smoke_generic_post_probe_catches_crashing_write_path(tmp_path):
     assert not ok
     assert "/api/orders" in detail
     assert "ينهار" in detail
+
+
+# --- the 4 Nov ghost-job bug: a bash child that never exits (the agent's own
+# test server) survives the timeout kill when launched through a stub
+# (cmd /c → python), keeps the pipes open, and communicate() waits for its
+# EOF forever — the job loop thread froze at 34 events for an hour with
+# state=running. The fix kills the WHOLE tree via taskkill /T.
+
+def test_tool_bash_timeout_kills_the_whole_tree(tmp_path, monkeypatch):
+    """A never-exiting child (and its grandchild, both holding the pipes) must
+    not defeat the bash timeout: the tool returns the tree-kill message and
+    the call terminates quickly."""
+    monkeypatch.setattr(ag, "BASH_TIMEOUT_S", 3)
+    ctx = ag.AgentContext(tmp_path, "t")
+    (tmp_path / "hang_helper.py").write_text(
+        "import subprocess, sys, time\n"
+        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'])\n"
+        "time.sleep(300)\n", encoding="utf-8")
+    t0 = time.monotonic()
+    ok, obs = ag.tool_bash(ctx, "python hang_helper.py")
+    took = time.monotonic() - t0
+    assert not ok
+    assert took < 60, f"tool_bash hung {took:.0f}s past its 3s timeout"
+    assert "شجرته" in obs
+
+
+def test_tool_bash_normal_command_still_works(tmp_path):
+    """The Popen rewrite must not break plain fast commands."""
+    ctx = ag.AgentContext(tmp_path, "t")
+    ok, obs = ag.tool_bash(ctx, "echo hello")
+    assert ok and "hello" in obs
 
 
 def _ws_with(ws, server_src: str):

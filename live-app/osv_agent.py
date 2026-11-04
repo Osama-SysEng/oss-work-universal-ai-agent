@@ -106,6 +106,23 @@ def _clip(text: str, limit: int) -> str:
 # Tools — each returns (ok: bool, observation: str)
 # ---------------------------------------------------------------------------
 
+def _kill_tree(proc: subprocess.Popen) -> None:
+    """Kill a child AND its descendants. On Windows a killed launcher stub
+    (e.g. the WindowsApps python.exe alias) leaves the real interpreter
+    running while it still holds our stdout/stderr pipes — the follow-up
+    communicate() then waits for pipe EOF forever and the tool call hangs
+    past its own timeout (the live 4 Nov ghost-job bug). taskkill /T is the
+    only stdlib-adjacent way to take the whole tree down."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                       capture_output=True, timeout=10, check=False)
+    proc.kill()
+    try:
+        proc.communicate(timeout=5)
+    except Exception:  # noqa: BLE001, S110 — last resort, never raise from a kill
+        pass
+
+
 def tool_bash(ctx: AgentContext, command: str) -> tuple[bool, str]:
     if _BASH_DENY.search(command or ""):
         return False, "أمر مرفوض: نمط مدمّر مكتشف (حد أمان OSS)"
@@ -113,17 +130,17 @@ def tool_bash(ctx: AgentContext, command: str) -> tuple[bool, str]:
     if not ok_rce:
         return False, f"أمر مرفوض بوابة الأمن: {why_rce}"
     argv = ["cmd", "/c", command] if os.name == "nt" else ["bash", "-c", command]
+    p = None
     try:
-        p = subprocess.run(argv, cwd=str(ctx.workspace), env=_BASH_ENV, check=False,
-                           capture_output=True, text=True, timeout=BASH_TIMEOUT_S,
-                           encoding="utf-8", errors="replace")
-        out = (p.stdout or "").strip()
-        err = (p.stderr or "").strip()
+        p = subprocess.Popen(argv, cwd=str(ctx.workspace), env=_BASH_ENV,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                             text=True, encoding="utf-8", errors="replace")
+        out, err = p.communicate(timeout=BASH_TIMEOUT_S)
         obs = f"exit={p.returncode}"
-        if out:
-            obs += f"\nstdout:\n{out}"
-        if err:
-            obs += f"\nstderr:\n{err}"
+        if out and out.strip():
+            obs += f"\nstdout:\n{out.strip()}"
+        if err and err.strip():
+            obs += f"\nstderr:\n{err.strip()}"
         # bloat guard: a runaway command must be visible to the model at once
         try:
             total = sum(f.stat().st_size for f in ctx.workspace.rglob("*") if f.is_file())
@@ -134,7 +151,12 @@ def tool_bash(ctx: AgentContext, command: str) -> tuple[bool, str]:
             pass
         return p.returncode == 0, _clip(obs, MAX_OBS_CHARS)
     except subprocess.TimeoutExpired:
-        return False, f"انتهت مهلة الأمر ({BASH_TIMEOUT_S}s) — أُلغي"
+        if p is not None:
+            _kill_tree(p)
+        return (False, (
+            f"انتهت مهلة الأمر ({BASH_TIMEOUT_S}s) — أُلغي وأُنهيت "
+            "شجرته كاملة (خادمٌ أشعلته داخل المساحة لا يُبقي على "
+            "الحلقة رهينة — شغّل الاختبارات القصيرة فقط داخل bash)"))
     except Exception as exc:  # noqa: BLE001 — tool errors are observations
         return False, f"فشل التنفيذ: {exc}"
 
@@ -580,11 +602,7 @@ def _smoke_test(ws) -> tuple[bool, str]:
         return True, ""
     finally:
         if proc is not None:
-            proc.terminate()
-            try:
-                proc.wait(3)
-            except Exception:  # noqa: BLE001
-                proc.kill()
+            _kill_tree(proc)
         shutil.rmtree(tmp, ignore_errors=True)
 
 

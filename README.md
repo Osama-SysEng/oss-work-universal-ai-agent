@@ -15,6 +15,40 @@
 
 ---
 
+## 🚀 Try it now
+
+**One click — GitHub Codespaces** (opens a cloud machine with this repo ready):
+
+> **[https://github.com/codespaces/new?repo=Osama-SysEng/oss-work-universal-ai-agent&ref=main](https://github.com/codespaces/new?repo=Osama-SysEng/oss-work-universal-ai-agent&ref=main)**
+
+then in the Codespace terminal:
+
+```bash
+pip install fastapi uvicorn
+cd live-app && python oss_work_live.py
+```
+
+open the forwarded port **8000** (Codespaces pops the link up) and talk to OS_V1.
+
+**On your machine** (the recommended, fully offline path):
+
+```bash
+git clone https://github.com/Osama-SysEng/oss-work-universal-ai-agent.git
+cd oss-work-universal-ai-agent/live-app
+pip install fastapi uvicorn
+python oss_work_live.py
+# → open http://127.0.0.1:8000
+```
+
+**Honest note about the brain**: the UI, the plan mode, skills, media tools and every
+local tool run out of the box — but the **build brain** needs an inference engine:
+either a local [llama.cpp](https://github.com/ggml-org/llama.cpp) server
+(`llama-server` on `127.0.0.1:11400` — the zero-internet path this project is built
+for) or a cloud provider configured in `osv_gateway.py`. Without one, the agent
+tells you honestly that it cannot think, instead of pretending.
+
+---
+
 ## What OS_V1 is
 
 One model, presented to you as a single thing, with two modes:

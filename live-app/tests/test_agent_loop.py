@@ -320,6 +320,28 @@ DEADLOCK_SERVER = GOOD_SERVER.replace(
     "            d = json.loads(self.rfile.read(n))",
     "            d = json.loads(self.rfile.read())")   # the live 3 Nov bug
 
+# The 4 Nov restaurant crash: a POST /api/orders handler that passes early
+# validation ({} → clean 400) but dies with an unhandled exception
+# (double fetchone → TypeError → dropped connection) once the body is VALID
+# and the settings row exists. Registration probes passed; the generic probe
+# with a canonical body must catch it.
+CRASH_SERVER = GOOD_SERVER.replace(
+    '''        else:
+            self._j(404, {"error": "not found"})''',
+    '''        elif self.path == '/api/orders':
+            n = int(self.headers.get('Content-Length', 0))
+            d = json.loads(self.rfile.read(n))
+            if not d.get('items'):
+                self._j(400, {"error": "Order must have at least one item"})
+                return
+            conn = __import__('sqlite3').connect(':memory:')
+            cur = conn.execute("SELECT value FROM settings WHERE key='x'")
+            cur.fetchone()                        # consumes the row
+            v = float(cur.fetchone()['value'])    # second call: None['value']
+            self._j(200, {"total": v})
+        else:
+            self._j(404, {"error": "not found"})''')
+
 
 def test_smoke_test_boots_and_probes_a_working_server(tmp_path):
     ok, detail = ag._smoke_test(_ws_with(tmp_path, GOOD_SERVER))
@@ -330,6 +352,23 @@ def test_smoke_test_catches_the_live_rfile_deadlock(tmp_path):
     ok, detail = ag._smoke_test(_ws_with(tmp_path, DEADLOCK_SERVER))
     assert not ok
     assert "علّق" in detail or "فشلاً" in detail
+
+
+def test_smoke_generic_post_probe_passes_validation_4xx(tmp_path):
+    """POST {} to every /api route: 4xx validation replies are HEALTHY —
+    the gate must accept the good server unchanged (no false bounce)."""
+    ok, detail = ag._smoke_test(_ws_with(tmp_path, GOOD_SERVER))
+    assert ok, detail
+
+
+def test_smoke_generic_post_probe_catches_crashing_write_path(tmp_path):
+    """A POST route that passes early validation but drops the connection on
+    a valid body is an unhandled crash → the gate bounces with the endpoint
+    and the remedy."""
+    ok, detail = ag._smoke_test(_ws_with(tmp_path, CRASH_SERVER))
+    assert not ok
+    assert "/api/orders" in detail
+    assert "ينهار" in detail
 
 
 def _ws_with(ws, server_src: str):

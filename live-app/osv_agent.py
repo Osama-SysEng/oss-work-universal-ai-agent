@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 
 import osv_redteam
+import osv_xml_parse as _x
 
 MAX_STEPS = 24          # رأسية للمشاريع الكبيرة (كانت 14 — البناء الواسع يحتاج دورات أكثر)
 TOOL_TIMEOUT_S = 60
@@ -520,8 +521,9 @@ def _smoke_test(ws) -> tuple[bool, str]:
             return False, f"الخادم يقبل الاتصال ولا يُجيب HTTP: {e}"
         m = re.search(r"['\"](/[^'\"]*regist[^'\"]*)['\"]", patched,
                       re.IGNORECASE)
-        if m:
-            path = m.group(1)
+        reg_path = m.group(1) if m else None
+        if reg_path:
+            path = reg_path
             body = json.dumps({"name": "smoke", "email": "smoke@test.local",
                                "password": "Smoke1234",
                                "role": "student"}).encode()
@@ -540,9 +542,41 @@ def _smoke_test(ws) -> tuple[bool, str]:
                                 "self.rfile.read(length) — القراءة بدون طول "
                                 "تعلّق) واختبره بنفسك قبل الإنهاء"))
             except Exception as e:  # noqa: BLE001
-                return (False, f"endpoint التسجيل {path} علّق بلا جواب: {e} — "
+                return (False, (f"endpoint التسجيل {path} علّق بلا جواب: {e} — "
                         "القراءة الصحيحة: length=int(self.headers.get("
-                        "'Content-Length', 0)) ثم self.rfile.read(length)")
+                        "'Content-Length', 0)) ثم self.rfile.read(length)"))
+        # Generic POST probe (lesson from the restaurant double-fetchone crash):
+        # every /api route found in the built source gets POST {} first —
+        # validation 4xx or 2xx both mean the handler survives that far. But a
+        # crash can hide BEHIND early validation (the live bug died only on a
+        # valid body), so order/reservation-like routes also get one canonical
+        # minimal body. ANY reply = alive; a dropped connection or hang = bounce.
+        routes = sorted({p for p in re.findall(
+            r"['\"](/api/[^'\"\s?{}]*)['\"]", patched) if "[" not in p})
+        bodies = [b"{}", json.dumps({
+            "items": [{"menu_item_id": 1, "quantity": 1}],
+            "order_type": "takeaway", "customer_name": "smoke",
+            "customer_phone": "0500000000", "guests": 2,
+            "reservation_time": "2030-01-01T20:00:00",
+        }).encode()]
+        for path in routes[:12]:
+            if path == reg_path:
+                continue               # already deep-probed with a valid body
+            for body in bodies:
+                req = urllib.request.Request(
+                    base + path, data=body,
+                    headers={"Content-Type": "application/json"})
+                try:
+                    urllib.request.urlopen(req, timeout=SMOKE_REQ_S)
+                except urllib.error.HTTPError:
+                    pass               # 4xx validation = handler alive
+                except Exception as e:  # noqa: BLE001
+                    return (False, (f"endpoint {path} ينهار عند POST: "
+                            f"{type(e).__name__}: {e} — هذا انهيار غير معالَج "
+                            "في معالج المسار (مثال شائع: fetchone() مستدعى "
+                            "مرتين في نفس السطر فترجع الثانية None). اقرأ "
+                            "الصف مرة واحدة في متغير، واختبر المسار بطلب "
+                            "حقيقي قبل الإنهاء"))
         return True, ""
     finally:
         if proc is not None:
@@ -555,13 +589,13 @@ def _smoke_test(ws) -> tuple[bool, str]:
 
 
 def _looks_truncated_action(reply: str) -> bool:
-    """An action that STARTED (json fence or {"tool") but never closed —
-    cut by the token limit. Punishing it as 'prose' shipped the raw JSON
-    as a final answer (the live flaw of 2 Nov 2026). An ODD count of ```
-    markers is also a cut: a fence opened and never closed."""
+    """An action that STARTED (json fence, XML tag, or {"tool") but never closed —
+    cut by the token limit. Also checks for unclosed ``` fences."""
     r = (reply or "").strip()
     if not r:
         return False
+    if _x.looks_truncated(r):
+        return True
     if re.search(r"```(json)?\s*\{", r) or r.startswith('{"tool"'):
         return True
     return r.count("```") % 2 == 1
@@ -569,15 +603,33 @@ def _looks_truncated_action(reply: str) -> bool:
 
 def parse_actions(text: str) -> list[dict]:
     """All valid JSON actions in a reply (opencode parallelism: one reply may
-    carry several independent tool calls — executed concurrently)."""
+    carry several independent tool calls — executed concurrently).
+
+    Handles three model output styles:
+      1. Standard fenced JSON: ```json {"tool":"bash"...} ```
+      2. XML tool tags: write_file<arg_key>path</arg_key><arg_value>foo</arg_value>...
+      3. Bare JSON without fences (qwen occasionally drops backticks)
+    """
+    normalized = _x.xml_to_json(text or "")
     out = []
-    for raw in _ACTION_RX.findall(text or ""):
+    for raw in _ACTION_RX.findall(normalized):
         try:
             act = json.loads(raw)
             if isinstance(act, dict) and isinstance(act.get("tool"), str):
                 out.append(act)
         except json.JSONDecodeError:
             continue
+    # Fallback: try bare JSON without fences (last resort)
+    if not out:
+        for m_ in re.finditer(
+                r'(\{[^{}]{20,500}?"tool"\s*:[^{}]{0,500}?\})',
+                normalized or "", re.DOTALL):
+            try:
+                act = json.loads(m_.group(1))
+                if isinstance(act, dict) and isinstance(act.get("tool"), str):
+                    out.append(act)
+            except json.JSONDecodeError:
+                continue
     return out
 
 
@@ -674,20 +726,20 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                     msgs.append({"role": "assistant",
                                  "content": reply[:800]})
                     nudge = [
-                        "أمرك الأخير انقطع في المنتصف (تجاوز حد طول الرد) "
+                        ("أمرك الأخير انقطع في المنتصف (تجاوز حد طول الرد) "
                         "فلم يُنفذ شيئاً. الملفات الكبيرة تُكتب أجزاءً بأداة "
                         "long_write بـ part/total — أو اجعل كل write_file "
-                        "ملفاً صغيراً واحداً. ابدأ الآن بالجزء الأول فقط.",
-                        "انقطع مرة ثانية — وهذه حقيقة فيزيائية لا تُقاوَم "
+                        "ملفاً صغيراً واحداً. ابدأ الآن بالجزء الأول فقط."),
+                        ("انقطع مرة ثانية — وهذه حقيقة فيزيائية لا تُقاوَم "
                         "بالإعادة: المحرك المحلي سياقه 8192 توكن فقط، وأمرٌ "
                         "يتجاوز ~800 توكن إخراجاً سيُقطع دائماً. الحل الوحيد "
                         "أجزاء أصغر بكثير: كل part لا يتجاوز 50 سطراً، واكتب "
                         "أصغر نسخة عاملة من كل ملف ثم أكمله بجزء لاحق. أكمل "
-                        "الآن من حيث توقفت بجزء صغير جداً.",
-                        "انقطع ثلاث مرات. أنجز الآن أصغر جزء ممكن — سطراً "
+                        "الآن من حيث توقفت بجزء صغير جداً."),
+                        ("انقطع ثلاث مرات. أنجز الآن أصغر جزء ممكن — سطراً "
                         "واحداً إذا لزم — وأصدر done بتقرير صادق عمّا بُني "
                         "فعلاً وعما بقي. الاكتمال عبر استئناف المهمة نفسها "
-                        "(المساحة محفوظة) لا بجولة واحدة بطول خيالي.",
+                        "(المساحة محفوظة) لا بجولة واحدة بطول خيالي."),
                     ][truncation_count - 1]
                     msgs.append({"role": "user", "content": nudge})
                     continue

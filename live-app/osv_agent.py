@@ -25,6 +25,7 @@ import subprocess
 import time
 from pathlib import Path
 
+import osv_cloud
 import osv_redteam
 import osv_xml_parse as _x
 
@@ -299,10 +300,19 @@ TOOLS = {
                    "desc": "جلب نص صفحة ويب"},
     "skill":      {"fn": tool_skill,      "args": {"name": "str اسم المهارة"},
                    "desc": "تحميل تعليمات مهارة من مكتبة المهارات (23 مهارة)"},
+    "supabase_status": {"fn": osv_cloud.tool_supabase_status, "args": {},
+                        "desc": "تشخيص اتصال Supabase بنداء حقيقي (مصادقة/قاعدة/جاهزية)"},
+    "supabase_setup":  {"fn": osv_cloud.tool_supabase_setup,
+                        "args": {"title": "str اسم التطبيق"},
+                        "desc": "تجهيز مشروع Supabase في المساحة: schema.sql بـRLS + عميل js/py + خطوات الإعداد"},
+    "supabase_smoke":  {"fn": osv_cloud.tool_supabase_smoke,
+                        "args": {"table": "str اسم الجدول (افتراضي items)"},
+                        "desc": "فحص حي أن الجدول يخدم عبر REST بمفتاح anon تحت RLS"},
 }
 
 EXECUTABLE = {"bash", "read_file", "write_file", "list_dir", "glob", "grep",
-              "web_search", "web_fetch", "skill"}
+              "web_search", "web_fetch", "skill",
+              "supabase_status", "supabase_setup", "supabase_smoke"}
 
 
 def execute(ctx: AgentContext, name: str, args: dict) -> tuple[bool, str]:
@@ -388,7 +398,13 @@ def system_prompt(task: str, table: dict | None = None) -> str:
         "11. كل المسارات نسبية إلى مساحة العمل — المساحة نفسها هي جذر المشروع. "
         "ممنوع المسارات المطلقة (C:\\...) أو مجلدات خارجها: تُرفض فوراً.\n"
         "12. ممنوع python -c بعبارات مقتبسة (اقتباسات cmd المتداخلة تكسرها) — "
-        "اكتب السكربت ملفاً بـ write_file ونفّذه بـ python file.py.")
+        "اكتب السكربت ملفاً بـ write_file ونفّذه بـ python file.py.\n"
+        "13. مهمة تذكر إنتاجية/سحابة/آلاف المستخدمين/نمو مستقبلي/supabase = ابنِ "
+        "فوق Supabase الحقيقي لا فوق SQLite التجريبي: حمّل المهارة skill "
+        "supabase-fullstack أولاً، ثم supabase_setup لكتابة schema.sql بـRLS "
+        "وعميل js/py، ووجّه المستخدم لتنفيذ schema في SQL Editor، ثم supabase_smoke "
+        "لإثبات أن الجدول حي فعلاً. مصادقة وتخزين وrealtime تأتي من Supabase "
+        "مجاناً بلا خادم تديره.")
 
 
 def _sig(name: str, args: dict) -> str:

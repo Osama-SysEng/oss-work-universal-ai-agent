@@ -203,6 +203,9 @@ def seed_providers() -> list[dict]:
     (configured keys, the auto-detected FreeLLMAPI router, the local engine)
     becomes a pool member — no user setup beyond what already exists."""
     seed = []
+    seed.append({"name": "oss-local", "base_url": "http://127.0.0.1:11400/v1/chat/completions",
+                 "key": "local-no-key", "model": "os_v1",
+                 "size_label": "Small", "intelligence_rank": 20})
     try:
         import oss_work_live as m
         cfg = m.load_cloud_config()

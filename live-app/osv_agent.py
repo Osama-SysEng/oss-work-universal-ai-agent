@@ -697,6 +697,17 @@ def parse_action(text: str) -> dict | None:
 # The agent loop — plan → act → observe → repeat → honest final report
 # ---------------------------------------------------------------------------
 
+def _is_build_task(task: str) -> bool:
+    """A task that must TOUCH the workspace at least once before done.
+    A first-turn zero-step `done` on such a task is the lesson-38 fake (a
+    textual plan submitted as the answer — live job j1794130293-1, 8 Nov:
+    "ابن لي موقع لمتابعة كرة القدم" died as done-with-plan, steps=0).
+    Pure chat ("ما هي عاصمة فرنسا؟", "اشرح لي...") stays exempt."""
+    return bool(re.search(
+        r"ابن|أنشئ|انشئ|اصنع|أصنع|صمم|طوّر|طور|برمج|مشروع|نظام|منصة|موقع|"
+        r"تطبيق|متجر|واجهة|خلفية", task or ""))
+
+
 def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
               memory_brief: str = "", max_steps: int | None = None,
               require_steps: int = 0,
@@ -710,6 +721,11 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
     prior_msgs: محادثة سابقة (استئناف جلسة) — تبدأ الحلقة من عندها بدل الصفر."""
     import oss_work_live as m
     steps_limit = max_steps or MAX_STEPS
+    # auto-floor: the caller's value always wins if higher, but a BUILD task
+    # can never complete with zero successful steps — set at the loop level
+    # so every call site (solo, swarm workers, project runner) is protected.
+    require_steps = max(require_steps,
+                        1 if _is_build_task(task) else 0)
 
     def say(evt):
         try:
@@ -733,7 +749,8 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
     loop_hinted = False                    # 3000 cut the JSON mid-content and
     selfcheck_bounced = False              # shipped the raw text (2 Nov flaw)
     truncation_count = 0                   # escalating nudges before honest
-    fs_bounced = False                     # death: engine ctx 8192 caps output
+    rs_bounced = False                     # zero-step done: one bounce, then
+    fs_bounced = False                     # honest failure with disclosure
     smoke_bounced = 0                      # hard — big single commands always cut
     fail_streak = 0                        # consecutive failed actions
     for step in range(1, steps_limit + 1):
@@ -743,15 +760,18 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
         effort: str | None = None if (hard and step == 1) or fail_streak >= 2 \
             else "low"
         reply = ""
-        for cfg in chain:
+        prov_fail: list[str] = []          # who refused and why — nothing is
+        for cfg in chain:                  # swallowed silently any more
             try:
                 reply = "".join(m._gw_stream(cfg, msgs, effort=effort,
                                              timeout=300,
                                              max_tokens=max_tok)).strip()
                 if reply:
                     break
-            except Exception:  # noqa: BLE001, S112 — next provider in the gateway chain
-                continue
+                prov_fail.append(f"{cfg.get('provider', '?')}: ردّ فارغ بلا استثناء")
+            except Exception as exc:  # noqa: BLE001 — next provider
+                prov_fail.append(f"{cfg.get('provider', '?')}: "
+                                 f"{type(exc).__name__} {str(exc)[:90]}")
         if not reply:
             # escalate once before dying: a full-thinking retry often revives
             # a step that low-effort generation left empty
@@ -763,9 +783,25 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                                     ).strip()
                     if reply:
                         break
-                except Exception:  # noqa: BLE001, S112
-                    continue
+                    prov_fail.append(f"{cfg.get('provider', '?')}: "
+                                     "ردّ فارغ (تصعيد تفكير كامل)")
+                except Exception as exc:  # noqa: BLE001
+                    prov_fail.append(f"{cfg.get('provider', '?')}: "
+                                     f"{type(exc).__name__} {str(exc)[:90]}")
         if not reply:
+            # HONEST ENGINE DEATH (8 Nov job j1794130293-1: "ابن لي موقع لمتابعة
+            # كرة القدم" ended as done, ok=false, events=2 — the old code
+            # returned ("", False) so the UI showed a bare فشل with zero
+            # reason while every provider in the chain had refused). The
+            # diagnosis now rides WITH the failure and the task stays
+            # resumable.
+            if prov_fail:
+                return (
+                    "لم أنجز شيئاً — لا عقل في السلسلة أجاب، فالمهمة لم تبدأ.\n"
+                    "تشخيص كل مزود بدل الصمت:\n"
+                    + "\n".join("• " + f for f in prov_fail)
+                    + "\n\nالأرجح: المحرك المحلي (127.0.0.1:11400) متوقف — "
+                    "أعاد تشغيله يفعّل كل شيء، ثم أعد إرسال المهمة نفسها."), False
             return final, False
 
         acts = parse_actions(reply)
@@ -863,17 +899,27 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
             # النص النهائي يعيش في الجلسة حتى لو كانت المهمة موجة واحدة —
             # بدونه يُحفظ ملف جلسة فارغ ولا يستأنف شيء
             msgs.append({"role": "assistant", "content": reply})
-            if require_steps and len([s for s in ctx.steps if s.get("ok")]) < require_steps:
+            n_ok_steps = len([s for s in ctx.steps if s.get("ok")])
+            if n_ok_steps < require_steps and not rs_bounced:
                 # الصدق بنيوي: إنهاء بلا عمل ناجح فعلي = زور يُرد لا يُقبل
                 # (خطوة فاشلة لا تُحتسب — الكتابة الساقطة ليست إنجازاً)
-                msgs.append({"role": "assistant", "content": reply})
+                rs_bounced = True
                 msgs.append({"role": "user", "content":
                              "ممنوع الإنهاء قبل العمل الناجح: إجراءاتك لم تُنتج ملفاً "
-                             "فعلياً على القرص (راجع [النتيجة] بالفشل). أعد التنفيذ "
-                             "بأدواتك واكتب الملفات فعلياً، ثم أنهِ بتقرير يذكر "
-                             "المسارات الحقيقية."})
+                             "فعلياً على القرص — خطة كلامية ليست بناءً. أبدأ الآن "
+                             "بأصغر إجراء حقيقي (write_file لأول ملف أو bash)، "
+                             "ثم أنهِ بتقرير يذكر المسارات الحقيقية."})
                 continue
             final = str(done_act.get("args", {}).get("answer", "")).strip()
+            if n_ok_steps < require_steps:
+                # بعد التوجيه بقي بلا تنفيذ: يُقبل صادقاً على أنه فشل — لا
+                # «اكتمل» زائف، والخطة تسلَّم للمستخدم مع الإفصاح الإلزامي.
+                final += ("\n\n[إفصاح نظامي]: أنهيت دون تنفيذ أي أداة ناجحة — "
+                          "لا شيء بُني فعلياً على القرص. الجلسة محفوظة: "
+                          "أعد إرسال المهمة نفسها لتستأنف العمل.")
+                say({"type": "agent_step", "step": step, "tool": "done",
+                     "ok": False})
+                return final, False
 
             # SMART SELF-CHECK: اختبارات كُتبت هذه الجولة ويجب أن تُشغَّل فعلاً
             # قبل ادعاء النجاح — النموذج كان يعلن النجاح فوق اختبارات لم ينفذها

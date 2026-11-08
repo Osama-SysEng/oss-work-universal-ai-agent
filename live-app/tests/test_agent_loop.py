@@ -124,6 +124,87 @@ def test_failed_write_does_not_count_toward_require_steps(tmp_path, monkeypatch)
     assert any("ممنوع الإنهاء" in c for c in calls)
 
 
+# ------------------------------------------------- the 8 Nov 2026 live flaw
+
+def test_build_task_zero_step_done_bounces_then_builds(tmp_path, monkeypatch):
+    """Job j1794130293-1: "ابن لي موقع لمتابعة كرة القدم" — the model submitted
+    a textual PLAN as done with ZERO tools. Production passed require_steps=0
+    so the old gate never fired. The build-task auto-floor must bounce it, and
+    the second reply (a real write) completes."""
+    task = "ابن لي موقع لمتابعة كرة القدم احداث ومباريات"
+    assert ag._is_build_task(task)
+    replies = [
+        '```json\n{"tool": "done", "args": {"answer": "1. الخطة 2. الخطة"}}\n```',
+        ('```json\n{"tool": "write_file", "args": {"path": "index.html", '
+         '"content": "<h1>الفرق</h1>"}}\n```\n'
+         '```json\n{"tool": "done", "args": {"answer": "بنيت الصفحة"}}\n```'),
+    ]
+    calls = []
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        calls.append(msgs[-1]["content"])
+        return [replies[len(calls) - 1]]
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    final, ok = ag.run_agent(task, _ctx(tmp_path), [{}], lambda e: None,
+                             max_steps=6)          # NO require_steps passed —
+    assert ok and "بنيت الصفحة" == final           # the floor comes from _is_build_task
+    assert (tmp_path / "index.html").is_file()
+    assert any("ممنوع الإنهاء" in c for c in calls)
+
+
+def test_build_task_refusing_to_act_dies_honestly_not_fakely(tmp_path, monkeypatch):
+    """After the one bounce the model STILL plans instead of building: the
+    job must end ok=False with a mandatory disclosure — never a fake
+    «اكتمل» driven by a plan text."""
+    task = "ابن لي متجراً بسيطاً"
+    assert ag._is_build_task(task)
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        return ['```json\n{"tool": "done", "args": {"answer": "الخطة فقط"}}\n```']
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    final, ok = ag.run_agent(task, _ctx(tmp_path), [{}], lambda e: None,
+                             max_steps=6)
+    assert ok is False
+    assert "خطة فقط" in final
+    assert "إفصاح نظامي" in final and "لا شيء بُني" in final
+
+
+def test_chat_task_first_turn_done_is_still_accepted(tmp_path, monkeypatch):
+    """Pure chat has no workspace contract: one-turn done stays legitimate —
+    the floor must NOT probe every conversational answer."""
+    assert not ag._is_build_task("ما هي عاصمة فرنسا؟")
+    assert not ag._is_build_task("اشرح لي الفرق بين list و tuple")
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        return ['```json\n{"tool": "done", "args": {"answer": "الرياض"}}\n```']
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    final, ok = ag.run_agent("ما هي عاصمة الدولة المصرية القديمة؟",
+                             _ctx(tmp_path), [{}], lambda e: None, max_steps=4)
+    assert ok and final == "الرياض"
+
+
+def test_all_providers_refused_reports_who_and_why(tmp_path, monkeypatch):
+    """Job j1794130293-1 also proved a SECOND flaw: with every provider down
+    the loop returned ("", False) — the UI showed a bare فشل with no reason.
+    The honest death must name each provider and its remedy."""
+    task = "اشرح لي التراث"
+    assert not ag._is_build_task(task)
+
+    def dead_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        raise ConnectionError(f"[WinError 10061] {cfg.get('provider')} refused")
+
+    monkeypatch.setattr(m, "_gw_stream", dead_gw)
+    chain = [{"provider": "oss_local"}, {"provider": "gemini"}]
+    final, ok = ag.run_agent(task, _ctx(tmp_path), chain, lambda e: None,
+                             max_steps=4)
+    assert ok is False and final          # NOT the silent empty string
+    assert "oss_local" in final and "gemini" in final
+    assert "127.0.0.1:11400" in final and "أعد إرسال المهمة نفسها" in final
+
+
 # ---------------------------------------------------------------- honesty relay
 
 def test_hidden_failure_is_appended_to_final(tmp_path, monkeypatch):

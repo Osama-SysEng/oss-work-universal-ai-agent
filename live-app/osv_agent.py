@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 
 import osv_cloud
+import osv_rea
 import osv_redteam
 import osv_xml_parse as _x
 
@@ -299,7 +300,18 @@ TOOLS = {
     "web_fetch":  {"fn": tool_web_fetch,  "args": {"url": "str"},
                    "desc": "جلب نص صفحة ويب"},
     "skill":      {"fn": tool_skill,      "args": {"name": "str اسم المهارة"},
-                   "desc": "تحميل تعليمات مهارة من مكتبة المهارات (23 مهارة)"},
+                   "desc": "تحميل تعليمات مهارة من مكتبة المهارات (26 مهارة)"},
+    "rea_study":    {"fn": osv_rea.tool_rea_study,
+                     "args": {"url": "str رابط الأصل العام"},
+                     "desc": "دراسة نمط نظيف لموقع: ما يراه الزائر مع سجل أدلة (لماذا: افهم قبل أن تبني)"},
+    "rea_inspect":  {"fn": osv_rea.tool_rea_inspect,
+                     "args": {"path": "str مسار ملف في المساحة"},
+                     "desc": "فحص ملف مُشفّرة/مُرفق ببصمته (zip/sqlite/gguf/pyc/PE/ELF) بحقائق مرصودة ومجاهيل معلنة"},
+    "rea_evidence": {"fn": osv_rea.tool_rea_evidence,
+                     "args": {"action": "str view أو unknown", "text": "str (لunknown)"},
+                     "desc": "سجل الأدلة: اعرضه أو سجّل مجهولاً بدل التخمين"},
+     "rea_check":    {"fn": osv_rea.tool_rea_check, "args": {},
+                     "desc": "فحص مُقاس للمبني مقابل الأصل: نسبة التقارب + تغطية العناوين + فروق معلنة"},
     "supabase_status": {"fn": osv_cloud.tool_supabase_status, "args": {},
                         "desc": "تشخيص اتصال Supabase بنداء حقيقي (مصادقة/قاعدة/جاهزية)"},
     "supabase_setup":  {"fn": osv_cloud.tool_supabase_setup,
@@ -312,6 +324,7 @@ TOOLS = {
 
 EXECUTABLE = {"bash", "read_file", "write_file", "list_dir", "glob", "grep",
               "web_search", "web_fetch", "skill",
+              "rea_study", "rea_inspect", "rea_evidence", "rea_check",
               "supabase_status", "supabase_setup", "supabase_smoke"}
 
 
@@ -404,7 +417,14 @@ def system_prompt(task: str, table: dict | None = None) -> str:
         "supabase-fullstack أولاً، ثم supabase_setup لكتابة schema.sql بـRLS "
         "وعميل js/py، ووجّه المستخدم لتنفيذ schema في SQL Editor، ثم supabase_smoke "
         "لإثبات أن الجدول حي فعلاً. مصادقة وتخزين وrealtime تأتي من Supabase "
-        "مجاناً بلا خادم تديره.")
+        "مجاناً بلا خادم تديره.\n"
+        "14. «افحص/افهم/افحص هذا الموقع أو الملف» أو «ابنِ مثل كذا/نسخة من» = "
+        "دورة Craft الرباعية: (أ) rea_study على رابط الأصل العام أولاً ولو "
+        "السجل في evidence/ — للملفات المُشحَّنة rea_inspect، (ب) ابنِ نسختك "
+        "بكودك الجديد (لا تنسخ شعارات أو صوراً أو نصوصاً مملوكة)، (ج) بعد البناء "
+        "rea_check: نسبة تقارب مُقاسة وفروق معلنة، (د) أصلح الفروق الأخطر وكرر "
+        "الفحص. ما لم تراه ببارصتك مجهول: سجّله بـ rea_evidence unknown لا "
+        "تختلقه — المنطق غير الظاهر يبقى مجهولاً معلناً.")
 
 
 def _sig(name: str, args: dict) -> str:

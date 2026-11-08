@@ -31,11 +31,13 @@ import mimetypes
 import os
 import re
 import shutil
+import ssl
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -260,6 +262,21 @@ def _strip_html(raw: str) -> str:
     return re.sub(r"\s+", " ", raw).strip()
 
 
+def _ssl_context() -> ssl.SSLContext:
+    """Real CA bundle for every https call. Windows pythons routinely lack
+    the OpenSSL default cafile path (this machine: CERTIFICATE_VERIFY_FAILED
+    on EVERY https URL) — and our web tools swallowed the exception, so the
+    agent's web access was silently dead. certifi is present in the env:
+    use it; fall back to the system default, never to silent failure."""
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+    except Exception:  # noqa: BLE001 — no certifi: system store may still work
+        ctx.load_default_certs()
+    return ctx
+
+
 def _http_get(url: str, timeout: int = HTTP_TIMEOUT) -> str:
     req = urllib.request.Request(url, headers={
         "User-Agent": (
@@ -270,7 +287,8 @@ def _http_get(url: str, timeout: int = HTTP_TIMEOUT) -> str:
         "Accept": "text/html,application/xhtml+xml,application/json",
         "Accept-Language": "ar,en-US,en;q=0.9",
     })
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with urllib.request.urlopen(req, timeout=timeout,
+                                context=_ssl_context()) as r:
         return r.read().decode("utf-8", errors="replace")
 
 
@@ -475,7 +493,8 @@ def _fetch_page_text(url: str) -> str:
 def _wiki_api(lang: str, params: str) -> dict:
     url = f"https://{lang}.wikipedia.org/w/api.php?format=json&{params}"
     req = urllib.request.Request(url, headers={"User-Agent": "OSSWork/1.0"})
-    with urllib.request.urlopen(req, timeout=WIKI_TIMEOUT) as r:
+    with urllib.request.urlopen(req, timeout=WIKI_TIMEOUT,
+                                context=_ssl_context()) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
@@ -624,6 +643,12 @@ CLOUD_CONFIG_PATH = Path(os.path.join(os.path.dirname(os.path.abspath(__file__))
 FREELLMAPI_BASE = "http://127.0.0.1:31415"
 
 CLOUD_PROVIDERS = {
+    "oss-local": {
+        "url": "http://127.0.0.1:11400/v1/chat/completions",
+        "default_model": "os_v1",
+        "key_url": "(المحرك المحلي llama.cpp — بلا مفتاح، يعمل بلا إنترنت)",
+        "label": "المحرك المحلي llama.cpp — qwen2.5 متوافق مع OpenAI على 127.0.0.1:11400 (مجاني، بلا إنترنت)",
+    },
     "freellmapi": {
         "url": f"{FREELLMAPI_BASE}/v1/chat/completions",
         "default_model": "auto",
@@ -711,6 +736,24 @@ _freellm_cache = {"cfg": None, "checked": 0.0}
 _healthy = {"provider": None}
 
 
+def _local_engine_up(timeout_s: float = 1.5) -> bool:
+    """Cached (30s) liveness probe of the local llama.cpp engine — cheap enough
+    to gate the fallback chain, so a machine with the engine stopped still works."""
+    now = time.time()
+    if now - _engine_check["checked"] > 30:
+        try:
+            r = urllib.request.urlopen("http://127.0.0.1:11400/health",
+                                       timeout=timeout_s)
+            up = r.status == 200
+        except Exception:  # noqa: BLE001 — engine down is a normal, handled state
+            up = False
+        _engine_check.update(checked=now, up=up)
+    return _engine_check["up"]
+
+
+_engine_check = {"checked": 0.0, "up": False}
+
+
 def get_freellmapi() -> dict | None:
     """Zero-setup unlimited intelligence: auto-discover the local FreeLLMAPI
     router and its unified key from the router's own database.
@@ -762,6 +805,13 @@ def cloud_chain(task: str | None = None) -> list[dict]:
     freellm = get_freellmapi()
     if freellm and (not primary or primary["provider"] != "freellmapi"):
         chain.append(freellm)
+    # The local llama.cpp engine is a full team-member: free, offline, vital
+    # — a dead freellmapi router or a 503'd gemini must never leave the agent
+    # brainless (the exact cause of the 5 Nov empty-reply failures).
+    if _local_engine_up() and (not primary or primary["provider"] != "oss-local"):
+        chain.append({**CLOUD_PROVIDERS["oss-local"],
+                      "provider": "oss-local", "model": "os_v1",
+                      "key": "local-no-key"})
     if _healthy["provider"]:
         for i, c in enumerate(chain):
             if c["provider"] == _healthy["provider"] and i > 0:

@@ -258,7 +258,53 @@ def test_serve_built_serves_real_http_and_replaces_previous(tmp_path):
                      or m2["pid"] != manifest["pid"])
 
 
-# ---------------------------------------------------------------- zombie reap
+# ------------------------------------------------------------- compaction
+
+def test_compact_msgs_drops_old_and_keeps_system():
+    """9 Nov live flaw: a 43-turn/33,420-char session resume sent 11K tokens
+    to the 8192-token engine → HTTP 400 forever. Compaction must keep the
+    system + newest turns within budget and disclose the drop honestly."""
+    msgs = [{"role": "system", "content": "SYS"}]
+    for i in range(30):
+        msgs.append({"role": "assistant" if i % 2 else "user",
+                     "content": f"turn-{i} " + "x" * 1200})
+    out = ag._compact_msgs(list(msgs), budget_chars=11000)
+    assert out[0]["role"] == "system"          # system survives
+    assert out[1]["role"] == "user" and "ضغط سياق آلي" in out[1]["content"]
+    assert out[-1]["role"] == "assistant" and "turn-29" in out[-1]["content"]
+    assert sum(len(m["content"]) for m in out) < 14000
+    small = ag._compact_msgs([{"role": "user", "content": "hi"}])
+    assert small == [{"role": "user", "content": "hi"}]   # small stays whole
+
+
+def test_run_agent_survives_overlong_resume_via_compaction(
+        tmp_path, monkeypatch):
+    """The engine 400s on requests carrying >2500 chars (a stand-in for the
+    real 8192-token context). A stale big session must not kill the run —
+    compaction + retry must land a working wave instead."""
+    big_session = [{"role": "user", "content": "y" * 9000},
+                   {"role": "assistant", "content": "done قبل"}]
+    calls = {"hists": []}
+
+    def fake_gw(cfg, hist, effort="none", timeout=300, max_tokens=3000):
+        size = sum(len(x.get("content") or "") for x in hist)
+        calls["hists"].append(size)
+        if size > 6000:                      # ~ the engine's 8192-token ceiling
+            raise RuntimeError("HTTP 400 prompt too long")
+        return ('```json\n{"tool": "write_file", "args": {"path": '
+                '"a.txt", "content": "v"}}\n```\n```json\n{"tool": "done", '
+                '"args": {"answer": "أنجزت بعد الضغط"}}\n```')
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    task = "اعم لي موقع جودة"
+    ctx = ag.AgentContext(tmp_path, "t")
+    seen = []
+    _final, ok = ag.run_agent(task, ctx, [{}], seen.append, max_steps=6,
+                              prior_msgs=list(big_session))
+    assert max(calls["hists"]) <= 6000       # no wave ever exceeded the ceiling
+    assert calls["hists"] and calls["hists"][0] <= 6000
+    assert ok is True
+
 
 def test_zombie_jobs_are_reaped_after_silence_and_live_ones_untouched():
     """The 9 Nov ghost: j1794217111-1 stuck «running» with ZERO events

@@ -867,6 +867,96 @@ def _is_build_task(task: str) -> bool:
         r"تطبيق|متجر|واجهة|خلفية", task or ""))
 
 
+def _compact_msgs(msgs: list[dict], budget_chars: int = 8000) -> list[dict]:
+    """Session history can outgrow the ENGINE's context (live 9 Nov case:
+    a 43-turn / 33,420-char resume sent 11K+ tokens to the 8192-token
+    engine and got HTTP 400 FOREVER — every provider "refused" with no
+    way back). Compaction keeps system + the NEWEST turns within the
+    budget and prepends a disclosure note. Old turns are DROPPED, never
+    re-faked by a summary: the workspace on disk is the source of truth
+    and every wave re-reads its files with tools."""
+    if not msgs:
+        return msgs
+    total = sum(len(m.get("content") or "") for m in msgs)
+    if total <= budget_chars:
+        return msgs
+    head = msgs[:1] if msgs[0].get("role") == "system" else []
+    rest = msgs[1:] if head else msgs
+    # the system prompt eats budget too — it is inside THIS conversation
+    acc = sum(len(m.get("content") or "") for m in head)
+    kept: list[dict] = []
+    for m in reversed(rest):
+        add = len(m.get("content") or "") + 40
+        if kept and acc + add > budget_chars:
+            break
+        kept.append(m)
+        acc += add
+    kept.reverse()
+    dropped = len(rest) - len(kept)
+    # a single oversized newest turn (a 17KB file dump, live 9 Nov) may have
+    # busted the budget alone — trim its front BEFORE building out (editing
+    # a list item after `out += kept` does not touch out's contents).
+    notice_len = 230
+    total = (sum(len(m.get("content") or "") for m in head)
+             + (notice_len if dropped else 0)
+             + sum(len(m.get("content") or "") for m in kept))
+    if total > budget_chars and kept:
+        allow = budget_chars - (total - len(kept[-1].get("content") or ""))
+        body = kept[-1].get("content") or ""
+        trimmed = dict(kept[-1])
+        if allow >= 120:
+            trimmed["content"] = ("[اقتُطع بداية الرسالة الطويلة — الباقي "
+                                  "على القرص]\n" + body[-allow:])
+        else:
+            trimmed["content"] = ("[رسالة أحدث طويلة جداً — محتواها "
+                                  "على القرص]")
+        kept[-1] = trimmed
+    out = list(head)
+    if dropped:
+        out.append({"role": "user", "content":
+                    f"[ضغط سياق آلي: حُذفت {dropped} رسالة قديمة لأن سياق "
+                    "المحرك محدود — مساحة العمل على القرص مرجع الصدق، "
+                    "أعد قراءة الملفات بالأدوات قبل الاعتماد على ذكرى "
+                    "المحادثة]"})
+    out += kept
+    return out
+
+
+N_CTX = 8192          # the local engine's total context (physics, not a knob)
+PROMPT_CAP_CHARS = 14000   # ≈4600 tokens — leaves ~3000 tokens to generate
+
+
+def _fits_ctx(msgs: list[dict]) -> tuple[list[dict], int]:
+    """Prompt size (chars≈tokens) vs the engine's hard 8192 ceiling:
+    returns (msgs, room_tokens). If the compacted prompt still leaves
+    <1024 tokens of room, compact HARD once — a live 400 from
+    prompt+max_tokens>ctx is otherwise indistinguishable from a dead
+    engine and the mission dies silently (9 Nov, twice)."""
+    total = sum(len(m.get("content") or "") for m in msgs)
+    room = N_CTX - (total // 3) - 512
+    if room < 1024:
+        msgs = _compact_msgs(msgs, 4000)
+        total = sum(len(m.get("content") or "") for m in msgs)
+        room = N_CTX - (total // 3) - 512
+    # the system prompt itself (device tools + learned brief) can bust
+    # the ceiling alone — trim its TAIL (the advisory learned brief sits
+    # at the end; rules/tools sit at the head) and disclose it.
+    if total > PROMPT_CAP_CHARS:
+        over = total - PROMPT_CAP_CHARS
+        if msgs and msgs[0].get("role") == "system":
+            sc = msgs[0].get("content") or ""
+            keep = max(len(sc) - over, 1500)
+            if keep < len(sc):
+                head = dict(msgs[0])
+                head["content"] = (sc[:keep]
+                                   + "\n[اقتُطع ذيل السياق التعليمي — "
+                                     "الأدوات والقواعد في الرأس كاملة]")
+                msgs = [head] + msgs[1:]
+                total = sum(len(m.get("content") or "") for m in msgs)
+                room = N_CTX - (total // 3) - 512
+    return msgs, room
+
+
 def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
               memory_brief: str = "", max_steps: int | None = None,
               require_steps: int = 0,
@@ -921,11 +1011,13 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
             else "low"
         reply = ""
         prov_fail: list[str] = []          # who refused and why — nothing is
-        for cfg in chain:                  # swallowed silently any more
+        wave_msgs, room = _fits_ctx(_compact_msgs(msgs))
+        eff_max = max(512, min(max_tok, room))
+        for cfg in chain:                  # resume 400-ed the engine forever
             try:
-                reply = "".join(m._gw_stream(cfg, msgs, effort=effort,
+                reply = "".join(m._gw_stream(cfg, wave_msgs, effort=effort,
                                              timeout=300,
-                                             max_tokens=max_tok)).strip()
+                                             max_tokens=eff_max)).strip()
                 if reply:
                     break
                 prov_fail.append(f"{cfg.get('provider', '?')}: ردّ فارغ بلا استثناء")
@@ -933,18 +1025,26 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                 prov_fail.append(f"{cfg.get('provider', '?')}: "
                                  f"{type(exc).__name__} {str(exc)[:90]}")
         if not reply:
-            # escalate once before dying: a full-thinking retry often revives
-            # a step that low-effort generation left empty
+            # Context-overflow defense (9 Nov live: oss-local HTTP 400 the
+            # moment a 43-turn/33K-char session hit the 8192-token engine —
+            # a machine state, not a dead one): compact HARD once and retry
+            # the whole chain with full thinking. The compact event is
+            # VISIBLE to the user — nothing is hidden.
+            wave_msgs, room = _fits_ctx(_compact_msgs(msgs, 5000))
+            eff_max = max(512, min(max(max_tok, 9000), room))
+            if len(wave_msgs) != len(msgs):
+                say({"type": "status", "stage": "compact",
+                     "text": "📌 تعذر النداء إلا بعد ضغط السياق: تُحذف أقدم "
+                             "الرسائل؛ الملفات على القرص مرجع الصدق."})
             for cfg in chain:
                 try:
-                    reply = "".join(m._gw_stream(cfg, msgs, effort=None,
+                    reply = "".join(m._gw_stream(cfg, wave_msgs, effort=None,
                                                  timeout=300,
-                                                 max_tokens=max(max_tok, 9000))
-                                    ).strip()
+                                                 max_tokens=eff_max)).strip()
                     if reply:
                         break
                     prov_fail.append(f"{cfg.get('provider', '?')}: "
-                                     "ردّ فارغ (تصعيد تفكير كامل)")
+                                     "ردّ فارغ (تصعيد بعد ضغط السياق)")
                 except Exception as exc:  # noqa: BLE001
                     prov_fail.append(f"{cfg.get('provider', '?')}: "
                                      f"{type(exc).__name__} {str(exc)[:90]}")
@@ -956,12 +1056,25 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
             # diagnosis now rides WITH the failure and the task stays
             # resumable.
             if prov_fail:
+                done_steps = sum(1 for s in ctx.steps if s.get("ok"))
+                credit = ""
+                if done_steps:
+                    landed = _ws_files(ctx.workspace)
+                    credit = (f"\nقبل العطل أُنجز فعلاً {done_steps} إجراءات: "
+                              + ("الملفات في المساحة الآن: "
+                                 + ", ".join(landed) if landed
+                                 else "بلا ملفات جديدة")
+                              + ". الجلسة محفوظة — أعد إرسال المهمة لمتابعة "
+                              "العمل من حيث توقف.")
                 return (
-                    "لم أنجز شيئاً — لا عقل في السلسلة أجاب، فالمهمة لم تبدأ.\n"
-                    "تشخيص كل مزود بدل الصمت:\n"
+                    "توقفت المهمة بسبب عطل سلسلة العقل (وبقي ما أُنجز "
+                    "ماثلاً على القرص)." + credit
+                    + "\n\nلم يعد العقل يجيب في هذه الخطوة. تشخيص كل مزود "
+                    "بدل الصمت:\n"
                     + "\n".join("• " + f for f in prov_fail)
-                    + "\n\nالأرجح: المحرك المحلي (127.0.0.1:11400) متوقف — "
-                    "أعاد تشغيله يفعّل كل شيء، ثم أعد إرسال المهمة نفسها."), False
+                    + "\n\nالأرجح: المحرك المحلي (127.0.0.1:11400) متوقف أو "
+                    "مثقل — أعد تشغيله يفعّل كل شيء، ثم أعد إرسال المهمة "
+                    "نفسها."), False
             return final, False
 
         acts = parse_actions(reply)

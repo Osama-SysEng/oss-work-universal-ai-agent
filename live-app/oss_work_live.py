@@ -2069,42 +2069,93 @@ def agent_run(req: AgentRequest):
 JOBS: dict[str, dict] = {}
 _JOBS_LOCK = threading.Lock()
 _JOB_SEQ = 0
+ZOMBIE_SILENCE_S = 30 * 60          # running + 30min of silence = dead
 
 
-def _agent_job_worker(job_id: str, req: "AgentRequest") -> None:
+def _agent_job_worker(job_id: str, req: AgentRequest) -> None:
     job = JOBS.get(job_id)
     if job is None:
         return
+
+    def _log_event(evt: dict) -> None:
+        """Every observable event refreshes the job's heartbeat; after a
+        zombie-reap the thread is officially dead — stragglers are ignored
+        so a hung worker cannot resurrect a state the sweeper settled."""
+        if job.get("reaped"):
+            return
+        job["events"].append(evt)
+        job["last"] = time.time()
+
     try:
         setup = _agent_setup(req)
         if setup is None:
-            job["events"].append({"type": "delta", "text":
-                                  "الوضع الوكيل يحتاج مزوداً سحابياً (⚙️)."})
+            _log_event({"type": "delta", "text":
+                        "الوضع الوكيل يحتاج مزوداً سحابياً (⚙️)."})
             job["result"] = {"ok": False}
             return
-        res = _agent_execute(setup, req,
-                             lambda e: job["events"].append(e))
-        job["events"].append({"type": "delta", "text": res["final"]})
+        res = _agent_execute(setup, req, _log_event)
+        _log_event({"type": "delta", "text": res["final"]})
         evt = _done_evt(res["ok"], res["steps"], res["tools"], res["team"])
-        job["events"].append(evt)
+        _log_event(evt)
         eng = evt.get("engine") or ""
         job["result"] = {"ok": "اكتمل" in eng and "غير مكتمل" not in eng,
                          "steps": res["steps"], "tools": res["tools"]}
     except Exception as exc:  # noqa: BLE001 — the job reports its own death
-        job["events"].append({"type": "delta",
-                              "text": f"⚠️ تعطلت المهمة: {exc}"})
+        _log_event({"type": "delta",
+                    "text": f"⚠️ تعطلت المهمة: {exc}"})
         job["result"] = {"ok": False}
     finally:
         job["state"] = "done"
 
 
-def _new_job(req: "AgentRequest") -> str:
+def _reap_zombie_jobs(min_silence_s: int = ZOMBIE_SILENCE_S) -> list[str]:
+    """The 9 Nov live ghost: j1794217111-1 stayed «running» for hours with
+    ZERO events — a worker thread hung on inherited pipes (lesson 54) will
+    never recover, and silence kept the user staring at a live-looking
+    corpse. A running job whose last event is older than min_silence_s is
+    DEAD: the reap announces the death honestly (diagnosis + resumability)
+    instead of manufacturing success. Returns reaped ids — machine-testable
+    exactly like require_steps, not a state-vars claim."""
+    reaped: list[str] = []
+    now = time.time()
+    with _JOBS_LOCK:
+        for jid, job in JOBS.items():
+            if job.get("state") != "running" or job.get("reaped"):
+                continue
+            last = job.get("last") or job.get("started") or now
+            if now - last <= min_silence_s:
+                continue
+            job["events"].append({"type": "delta", "text":
+                "⚠️ أنهيتُ هذه المهمة إدارياً: صمت كامل أكثر من "
+                f"{min_silence_s // 60} دقيقة بلا أي حدث — عاملها خرج "
+                "منذ ذلك الوقت (انقطاع محرك أو تعليق أنابيب) ولا "
+                "يستأنف نفسه. أعد إرسال المهمة لبدء محاولة جديدة؛ "
+                "مساحة عملها وجلستها محفوظتان."})
+            job["result"] = {"ok": False, "steps": 0, "tools": [],
+                             "zombie": True}
+            job["state"] = "done"
+            job["reaped"] = True
+            reaped.append(jid)
+    return reaped
+
+
+def _zombie_sweeper_loop() -> None:
+    while True:
+        try:
+            _reap_zombie_jobs()
+        except Exception:  # noqa: BLE001, S110 — hygiene must never kill the daemon
+            pass
+        time.sleep(60)
+
+
+def _new_job(req: AgentRequest) -> str:
     global _JOB_SEQ
     with _JOBS_LOCK:
         _JOB_SEQ += 1
         job_id = f"j{int(time.time())}-{_JOB_SEQ}"
         JOBS[job_id] = {"task": req.task, "state": "running",
-                        "started": time.time(), "events": [], "result": None}
+                        "started": time.time(), "last": time.time(),
+                        "events": [], "result": None}
     threading.Thread(target=_agent_job_worker, args=(job_id, req),
                      daemon=True, name=f"agent-job-{job_id}").start()
     return job_id
@@ -2115,6 +2166,10 @@ def agent_start(req: AgentRequest):
     """Fire an agent run in the background — returns the job id immediately.
     The UI streams /agent/stream/{job_id} and can close freely."""
     return {"ok": True, "job_id": _new_job(req)}
+
+
+threading.Thread(target=_zombie_sweeper_loop, daemon=True,
+                 name="agent-jobs-zombie-sweeper").start()
 
 
 @app.get("/api/v1/agent/stream/{job_id}")
@@ -2150,6 +2205,7 @@ def agent_jobs():
     with _JOBS_LOCK:
         items = [{"id": jid, "task": (j["task"] or "")[:80],
                   "state": j["state"], "started": j["started"],
+                  "last": int(j.get("last") or j["started"]),
                   "events": len(j["events"])}
                  for jid, j in sorted(JOBS.items(),
                                       key=lambda kv: -kv[1]["started"])]

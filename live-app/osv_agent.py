@@ -125,6 +125,13 @@ def _kill_tree(proc: subprocess.Popen) -> None:
         pass
 
 
+def _kill_pid(pid: int) -> None:
+    """Kill a PID-ONLY process (a serve instance that outlived the loop) —
+    taskkill /T /F, the tree-killer, without a Popen object to hold."""
+    subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)],
+                   capture_output=True, timeout=10, check=False)
+
+
 def tool_bash(ctx: AgentContext, command: str) -> tuple[bool, str]:
     if _BASH_DENY.search(command or ""):
         return False, "أمر مرفوض: نمط مدمّر مكتشف (حد أمان OSS)"
@@ -495,6 +502,41 @@ def _ws_files(ws, k: int = 8) -> list[str]:
         return []
 
 
+_EXTERNAL_REF = re.compile(r"^(https?:|//|#|mailto:|data:)", re.IGNORECASE)
+
+
+def _dangling_refs(ws) -> list[str]:
+    """Local asset an html file CALLS but that does not exist on disk.
+    The live 9 Nov football build died exactly here: truncation killed the
+    app.js write, index.html still referenced it, every fetch failed, and
+    the user saw an EMPTY product while the backend/db were fine."""
+    out: set[str] = set()
+    try:
+        htmls = sorted(ws.rglob("*.html"))
+    except Exception:  # noqa: BLE001
+        return []
+    for p in htmls:
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for attr in re.findall(r'(?:src|href)\s*=\s*["\']([^"\']+)["\']', text):
+            url = attr.strip()
+            if _EXTERNAL_REF.search(url):
+                continue
+            path = url.split("#", 1)[0].split("?", 1)[0].strip()
+            if not path:
+                continue
+            target = (p.parent / path).resolve()
+            try:
+                target.relative_to(ws.resolve())
+            except ValueError:
+                continue          # external/absolute path — not ours to check
+            if not target.exists():
+                out.add(f"{path} (يستدعيه {p.name} وهو غير موجود على القرص)")
+    return sorted(out)[:6]
+
+
 # ---------------------------------------------------------------- smoke gate
 # The model kept dying by truncation BEFORE it could ever test its own build,
 # and the live E2E of its artifact found a real deadlock (rfile.read() without
@@ -642,6 +684,123 @@ def _smoke_test(ws) -> tuple[bool, str]:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _has_server(ws) -> bool:
+    """server.py that actually binds (the smokeable/serveable kind)."""
+    try:
+        return any("serve_forever" in p.read_text(encoding="utf-8",
+                                                 errors="replace")
+                   for p in ws.rglob("server.py"))
+    except Exception:  # noqa: BLE001 — a broken workspace must not kill a gate
+        return False
+
+
+SERVE_MANIFEST = ".oss-serve.json"
+
+
+def _serve_built(ws) -> tuple[str, str]:
+    """Boot the BUILT server as a live preview the user can open — copy
+    mechanics like _smoke_test, but: the copy target is the mkdtemp ROOT
+    (a subdir name can collide with a workspace child and nest the build
+    one level deep — the live probe caught exactly that), DEVNULL pipes so
+    the server SURVIVES the loop, and a manifest in the workspace lets the
+    NEXT serve kill this instance instead of stacking zombies.
+    Returns (url, note); url="" when not bootable — never a dead URL."""
+    import shutil
+    import socket
+    import subprocess as sp
+    import sys
+    import tempfile
+    import time as tmod
+    import urllib.error
+    import urllib.request
+
+    try:
+        runnable = [p for p in ws.rglob("server.py")
+                    if "serve_forever" in p.read_text(encoding="utf-8",
+                                                      errors="replace")]
+    except OSError:
+        runnable = []
+    if not runnable:
+        return "", "لا خادم قابل للمعاينة في المساحة"
+    src = runnable[0]
+    note_extra = ""
+    mp = ws / SERVE_MANIFEST
+    if mp.is_file():
+        try:
+            old = json.loads(mp.read_text(encoding="utf-8")) or {}
+            old_pid = int(old.get("pid") or 0)
+            if old_pid:
+                _kill_pid(old_pid)
+                note_extra = " (نسخة معاينة سابقة قُتلت — بدلها الحيّة)"
+            shutil.rmtree(old.get("tmp") or "", ignore_errors=True)
+        except Exception:  # noqa: BLE001, S110 — malformed manifest, ignore
+            pass
+    s = socket.socket()
+    s.bind(("", 0))
+    port = s.getsockname()[1]
+    s.close()
+    tmp = tempfile.mkdtemp(prefix="osv_serve_")
+    proc = None
+    try:
+        # copy target = the mkdtemp ROOT: copying a workspace whose child
+        # dir shares our target name nests the build one level deep and
+        # server.py then "disappears" from the expected path. mkdtemp made
+        # the root already, so dirs_exist_ok=True is required (and safe:
+        # an mkdtemp path is unique and empty by construction).
+        shutil.copytree(src.parent, Path(tmp), dirs_exist_ok=True)
+        (Path(tmp) / SERVE_MANIFEST).unlink(missing_ok=True)
+        f = Path(tmp) / src.name
+        code = f.read_text(encoding="utf-8", errors="replace")
+        patched = re.sub(
+            r"\(\s*(['\"])((?:127\.0\.0\.1|0\.0\.0\.0)?)\1\s*,\s*(\d{4,5})\s*\)",
+            lambda m2: f"({m2.group(1)}{m2.group(2)}{m2.group(1)}, {port})",
+            code)
+        f.write_text(patched, encoding="utf-8")
+        env = dict(_BASH_ENV)
+        env["PORT"] = str(port)
+        proc = sp.Popen([sys.executable, f.name], cwd=str(tmp),
+                        stdout=sp.DEVNULL, stderr=sp.DEVNULL, env=env)
+        alive = False
+        for _ in range(20):
+            if proc.poll() is not None:
+                break
+            sk = socket.socket()
+            sk.settimeout(0.3)
+            try:
+                sk.connect(("127.0.0.1", port))
+                alive = True
+            except OSError:
+                pass
+            finally:
+                sk.close()
+            if alive:
+                break
+            tmod.sleep(0.3)
+        if not alive:
+            proc.kill()
+            shutil.rmtree(tmp, ignore_errors=True)
+            return "", "الخادم لم يقلع للمعاينة الحية"
+        mp.write_text(json.dumps({"pid": proc.pid, "port": port,
+                                  "tmp": str(tmp)}, ensure_ascii=False),
+                      encoding="utf-8")
+        url = f"http://127.0.0.1:{port}/"
+        try:
+            urllib.request.urlopen(url, timeout=4)
+        except urllib.error.HTTPError:
+            pass                      # any HTTP answer = it serves
+        except Exception:  # noqa: BLE001, S110 — port answered, boot confirmed
+            pass
+        return url, note_extra
+    except Exception:  # noqa: BLE001 — serving must never break completion
+        if proc is not None:
+            try:
+                proc.kill()
+            except Exception:  # noqa: BLE001, S110 — best-effort cleanup
+                pass
+        shutil.rmtree(tmp, ignore_errors=True)
+        return "", "تعطل إقلاع المعاينة الحية (لا يمنع الاكتمال)"
+
+
 def _looks_truncated_action(reply: str) -> bool:
     """An action that STARTED (json fence, XML tag, or {"tool") but never closed —
     cut by the token limit. Also checks for unclosed ``` fences."""
@@ -750,6 +909,7 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
     selfcheck_bounced = False              # shipped the raw text (2 Nov flaw)
     truncation_count = 0                   # escalating nudges before honest
     rs_bounced = False                     # zero-step done: one bounce, then
+    dangling_bounced = False               # missing static refs: one bounce
     fs_bounced = False                     # honest failure with disclosure
     smoke_bounced = 0                      # hard — big single commands always cut
     fail_streak = 0                        # consecutive failed actions
@@ -839,6 +999,10 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                 credit = (" الملفات التي أُنجزت فعلاً في المساحة: "
                           + ", ".join(landed)) if landed else \
                          " لم يُنفذ شيء في المساحة."
+                dang = _dangling_refs(ctx.workspace)
+                if dang:
+                    credit += (" — ويَنقص ما تستدعيه الصفحة (بغيابه الواجهة "
+                               "فارغة): " + "، ".join(dang[:3]))
                 layers = (" طبقات النظام الثلاثي موجودة فعلاً في المساحة — "
                           "استأنف المهمة نفسها (المساحة محفوظة) وأكمل ما "
                           "بقي بدل البدء من الصفر."
@@ -921,6 +1085,32 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                      "ok": False})
                 return final, False
 
+            # STATIC-REF GATE (9 Nov live flaw: index.html called app.js that
+            # truncation never produced — the page fetched NOTHING and the
+            # user saw an empty product while the whole backend worked):
+            dang = _dangling_refs(ctx.workspace) if _is_build_task(task) else []
+            if dang and not dangling_bounced:
+                dangling_bounced = True
+                msgs.append({"role": "user", "content":
+                             "الاكتمال مرفوض: استدعيت ملفات غير موجودة: "
+                             + "؛ ".join(dang[:4])
+                             + ". بغيابها يفشل كل fetch والصفحة تظهر فارغة "
+                             "أمام المستخدم. اكتب الملفات كاملة بأجزاء صغيرة "
+                             "(كل جزء ≤50 سطراً بـwrite_file أو long_write "
+                             "بـpart/total) ثم أنهِ — والموجود لا تكرره."})
+                continue
+            if dang:
+                # بعد التوجيه بقي ناقصاً: يُقبل صادقاً على أنه فشل — عرض
+                # «اكتمل» فوق واجهة ناقصة هو الزور الذي اشتكى منه المستخدم
+                final += ("\n\n[إفصاح نظامي]: الصفحة تستدعي ملفات غير موجودة "
+                          "على القرص: " + "؛ ".join(dang[:4])
+                          + " — أي عرض بدونها سيظهر فارغاً. أعد إرسال المهمة "
+                          "للاستئناف واكتبها أولاً.")
+                say({"type": "agent_step", "step": step, "tool": "done",
+                     "ok": False})
+                return final, False
+
+
             # SMART SELF-CHECK: اختبارات كُتبت هذه الجولة ويجب أن تُشغَّل فعلاً
             # قبل ادعاء النجاح — النموذج كان يعلن النجاح فوق اختبارات لم ينفذها
             tests_here = _tests_written(ctx.workspace, t0)
@@ -969,7 +1159,8 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
             # kept dying by truncation before ever testing its build, and
             # the live artifact had a real deadlock. Two bounces max, then
             # accept with mandatory disclosure.
-            if _wants_fullstack(task) and smoke_bounced < 2:
+            if (_wants_fullstack(task) or _has_server(ctx.workspace)) \
+                    and smoke_bounced < 2:
                 smoke_ok, smoke_detail = _smoke_test(ctx.workspace)
                 if not smoke_ok:
                     smoke_bounced += 1
@@ -984,6 +1175,19 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                         continue
                     final += ("\n\n[إفصاح نظامي]: فحص الدخان ما زال يفشل: "
                               + smoke_detail)
+                elif smoke_ok:
+                    # LIVE PREVIEW: after the smoke gate PROVED the server
+                    # answers, boot the real preview instance and hand the
+                    # user a working URL instead of a folder of files.
+                    try:
+                        url, serve_note = _serve_built(ctx.workspace)
+                    except Exception:  # noqa: BLE001 — preview is a bonus
+                        url, serve_note = "", ""
+                    if url:
+                        final += (f"\n\n🌐 معاينة حية: {url} — خادم المساحة "
+                                  "يعمل الآن؛ افتح الرابط مباشرة"
+                                  + serve_note + ". إن مات الخادم لاحقاً "
+                                  "شغّل python server.py من مساحة العمل.")
 
             # الصدق لا يُوكل للنموذج (OSS law): أي تحذير ⚠️ أو فشل في ملاحظات
             # الأدوات يُلحق بالرد النهائي إلزاماً — النموذج لا يستطيع إخفاء

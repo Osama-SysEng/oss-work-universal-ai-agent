@@ -5,6 +5,7 @@ permanent regression suite. Everything runs OFFLINE (the LLM is mocked)."""
 
 import json
 import time
+import urllib.request
 
 import oss_work_live as m
 import osv_agent as ag
@@ -203,6 +204,104 @@ def test_all_providers_refused_reports_who_and_why(tmp_path, monkeypatch):
     assert ok is False and final          # NOT the silent empty string
     assert "oss_local" in final and "gemini" in final
     assert "127.0.0.1:11400" in final and "أعد إرسال المهمة نفسها" in final
+
+
+# ---------------------------------------------------------------- static refs
+
+def test_dangling_ref_gate_bounces_empty_frontend(tmp_path, monkeypatch):
+    """The 9 Nov live flaw: index.html referencing app.js that truncation
+    never wrote — every fetch failed and the user saw an EMPTY product.
+    The done must bounce once, then accept with a mandatory disclosure."""
+    d = tmp_path / "site"
+    d.mkdir()
+    (d / "index.html").write_text(
+        '<html><body><script src="app.js"></script></body></html>',
+        encoding="utf-8")
+    assert ag._dangling_refs(tmp_path) == [
+        "app.js (يستدعيه index.html وهو غير موجود على القرص)"]
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        # always: write an unrelated file then declare done — app.js never
+        # EXISTS, so gate-1 bounces and the second done stays held back
+        return ('```json\n{"tool": "write_file", "args": {"path": '
+                '"x.txt", "content": "1"}}\n```\n'
+                '```json\n{"tool": "done", "args": {"answer": "أنجزت '
+                'كل شيء"}}\n```')
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    task = "بن لي موقع لمتابعة كرة القدم احداث ومباريات"
+    assert ag._is_build_task(task)
+    ctx = ag.AgentContext(tmp_path, "t")
+    final, ok = ag.run_agent(task, ctx, [{}], lambda e: None, max_steps=8)
+    assert ok is False
+    assert "[إفصاح نظامي]" in final and "app.js" in final
+    assert not (tmp_path / ".oss-serve.json").exists()  # not served broken
+
+
+def test_serve_built_serves_real_http_and_replaces_previous(tmp_path):
+    """The 9 Nov serve feature: _serve_built boots a COPY of the built
+    server on a free port; the URL answers REAL HTTP; a second serve
+    replaces the first instance instead of stacking zombies."""
+    d = tmp_path / "site"
+    d.mkdir()
+    (d / "server.py").write_text(GOOD_SERVER, encoding="utf-8")
+    url, _note = ag._serve_built(tmp_path)
+    assert url and url.startswith("http://127.0.0.1:")
+    page = urllib.request.urlopen(url, timeout=6).read()
+    assert b'"ok"' in page          # GOOD_SERVER answers real JSON over HTTP
+    manifest = json.loads((tmp_path / ".oss-serve.json").read_text("utf-8"))
+    assert manifest["pid"] and manifest["tmp"]
+
+    url2, _ = ag._serve_built(tmp_path)
+    m2 = json.loads((tmp_path / ".oss-serve.json").read_text("utf-8"))
+    assert url2 and (m2["port"] != manifest["port"]
+                     or m2["pid"] != manifest["pid"])
+
+
+# ---------------------------------------------------------------- zombie reap
+
+def test_zombie_jobs_are_reaped_after_silence_and_live_ones_untouched():
+    """The 9 Nov ghost: j1794217111-1 stuck «running» with ZERO events
+    forever. A running job silent beyond ZOMBIE_SILENCE_S must be honestly
+    settled (done + ok=False + resume guidance); a live job silent 1
+    second must stay running."""
+    try:
+        m.JOBS["j-zombie"] = {"task": "t", "state": "running",
+                              "started": time.time() - 3600,
+                              "last": time.time() - 3600,
+                              "events": [], "result": None}
+        m.JOBS["j-live"] = {"task": "t", "state": "running",
+                            "started": time.time(), "last": time.time(),
+                            "events": [], "result": None}
+        reaped = m._reap_zombie_jobs(min_silence_s=1800)
+        assert "j-zombie" in reaped and "j-live" not in reaped
+        z = m.JOBS["j-zombie"]
+        assert z["state"] == "done"
+        assert z["result"] == {"ok": False, "steps": 0, "tools": [],
+                               "zombie": True}
+        assert any("أعد إرسال المهمة" in str(e.get("text"))
+                   for e in z["events"])
+        assert m.JOBS["j-live"]["state"] == "running"
+        # a double reap must be idempotent
+        assert m._reap_zombie_jobs(min_silence_s=1800) == []
+    finally:
+        m.JOBS.pop("j-zombie", None)
+        m.JOBS.pop("j-live", None)
+
+
+def test_working_job_never_aged_out_by_short_event_gaps(tmp_path):
+    """The sweeper trusts the heartbeat only: slow events (a busy step)
+    must not reap a genuinely progressing job — last_event is refreshed
+    per event via _log_event."""
+    try:
+        m.JOBS["j-think"] = {"task": "t", "state": "running",
+                             "started": time.time() - 2400,
+                             "last": time.time() - 60,   # events still flow
+                             "events": [], "result": None}
+        assert m._reap_zombie_jobs(min_silence_s=1800) == []
+        assert m.JOBS["j-think"]["state"] == "running"
+    finally:
+        m.JOBS.pop("j-think", None)
 
 
 # ---------------------------------------------------------------- honesty relay

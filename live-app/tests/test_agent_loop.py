@@ -443,6 +443,31 @@ def test_parse_actions_tolerates_fence_without_json_tag():
     assert ag.parse_actions('```\n{"tool": "bash", "args": {"command": "dir"}}\n```')
 
 
+def test_parse_bare_json_with_nested_braces_in_content():
+    """10 Nov live: nemotron-3-ultra:free drops ``` fences AND puts CSS
+    braces inside content — the old [^{}] regex could never match its
+    write_file actions (the strongest free brain was mute)."""
+    bare = ('{\n  "tool": "write_file",\n  "arguments": {\n'
+            '    "path": "style.css",\n'
+            '    "content": "{background: var(--bg)}\\n.cal{grid:1fr}"\n'
+            '  }\n}')
+    acts = ag.parse_actions(bare)
+    assert [(a["tool"], a["arguments"]["path"]) for a in acts] == \
+        [("write_file", "style.css")]
+
+
+def test_parse_actions_never_duplicate_one_block():
+    """10 Nov live: xml_to_json double-appended plain text (the final
+    `if last_end < len` fired after the no-tool break) — every action used
+    to execute TWICE in every wave."""
+    fenced = '```json\n{"tool": "bash", "args": {"command": "dir"}}\n```'
+    acts = ag.parse_actions(fenced)
+    assert len(acts) == 1 and acts[0]["tool"] == "bash"
+    two = ('{"tool": "bash", "arguments": {"command": "dir"}}\n'
+           '{"tool": "done", "arguments": {"answer": "أ"}}')
+    assert [a["tool"] for a in ag.parse_actions(two)] == ["bash", "done"]
+
+
 # ------------------------------------------------- fullstack completeness gate
 
 def test_wants_fullstack_flags_build_tasks_with_layers():

@@ -150,6 +150,11 @@ def tool_bash(ctx: AgentContext, command: str) -> tuple[bool, str]:
             obs += f"\nstdout:\n{out.strip()}"
         if err and err.strip():
             obs += f"\nstderr:\n{err.strip()}"
+        # 10 Nov live: unix commands on Windows cmd made the strong brain
+        # retry `ls` forever — the known failure now carries its remedy.
+        if "' is not recognized" in err or "' is not recognized" in out:
+            obs += ("\n💡 هذا cmd ويندوز: ls←dir، grep←findstr، cat←type، "
+                    "python3←python، rm←del، mkdir متاح كما هو.")
         # bloat guard: a runaway command must be visible to the model at once
         try:
             total = sum(f.stat().st_size for f in ctx.workspace.rglob("*") if f.is_file())
@@ -201,7 +206,11 @@ def tool_list_dir(ctx: AgentContext, path: str = "") -> tuple[bool, str]:
     try:
         entries = sorted(p.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
         lines = [f"{'📄' if e.is_file() else '📁'} {e.name}" for e in entries[:60]]
-        return True, "\n".join(lines) or "(فارغ)"
+        # 10 Nov live: a fresh empty workspace made the strong brain loop on
+        # list_dir forever — the empty result now carries the remedy.
+        return True, ("\n".join(lines) or
+                      "(فارغ — مساحة عمل جديدة نظيفة؛ لا تكرر list_dir، "
+                      "ابدأ الإنشاء بـ write_file فوراً)")
     except Exception as exc:  # noqa: BLE001
         return False, f"تعذر الإدراج: {exc}"
 
@@ -291,7 +300,9 @@ def tool_skill(ctx: AgentContext, name: str) -> tuple[bool, str]:
 
 TOOLS = {
     "bash":       {"fn": tool_bash,       "args": {"command": "str"},
-                   "desc": "تنفيذ أمر داخل مساحة عمل الوكيل (cmd على ويندوز)"},
+                   "desc": "تنفيذ أمر داخل مساحة عمل الوكيل (cmd ويندوز: dir "
+                           "بدل ls، findstr بدل grep، python بدل python3؛ "
+                           "أوامر يونكس ls/grep/cat تفشل هنا)"},
     "read_file":  {"fn": tool_read_file,  "args": {"path": "str"},
                    "desc": "قراءة ملف من مساحة العمل"},
     "write_file": {"fn": tool_write_file, "args": {"path": "str", "content": "str"},
@@ -832,17 +843,38 @@ def parse_actions(text: str) -> list[dict]:
                 out.append(act)
         except json.JSONDecodeError:
             continue
-    # Fallback: try bare JSON without fences (last resort)
+    # Fallback: bare JSON without fences (last resort — balanced-brace scan
+    # from every {"tool" candidate; handles NESTED braces inside file
+    # contents. Live 10 Nov: nemotron-3-ultra-550b:free drops fences AND
+    # puts CSS braces in content — the former [^{}] regex could never
+    # match its write_file actions, making the strongest free brain mute).
     if not out:
-        for m_ in re.finditer(
-                r'(\{[^{}]{20,500}?"tool"\s*:[^{}]{0,500}?\})',
-                normalized or "", re.DOTALL):
-            try:
-                act = json.loads(m_.group(1))
-                if isinstance(act, dict) and isinstance(act.get("tool"), str):
-                    out.append(act)
-            except json.JSONDecodeError:
-                continue
+        for m_ in re.finditer(r'\{\s*"tool"', normalized or ""):
+            start, depth, in_str, esc = m_.start(), 0, False, False
+            for i in range(start, len(normalized)):
+                ch = normalized[i]
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif ch == "\\":
+                        esc = True
+                    elif ch == '"':
+                        in_str = False
+                    continue
+                if ch == '"':
+                    in_str = True
+                elif ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            act = json.loads(normalized[start:i + 1])
+                        except json.JSONDecodeError:
+                            break
+                        if isinstance(act, dict) and isinstance(act.get("tool"), str):
+                            out.append(act)
+                        break
     return out
 
 
@@ -1319,11 +1351,22 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
             return final, bool(final)
 
         # parallel execution of the independent actions in this reply (opencode
-        # parallelism: one step may carry several tool calls, run concurrently)
+        # parallelism: one step may carry several tool calls, run concurrently).
+        # 10 Nov live: the strong free brain emits the SAME action twice in
+        # one reply — the double-run flooded results («فارغ×2») and confused
+        # the model into list_dir loops. Identical (tool,args) run once.
+        unique_acts: list[dict] = []
+        seen_acts: set[tuple] = set()
+        for a in acts[:3]:
+            key = (a.get("tool"), json.dumps(a.get("args", {}),
+                                             sort_keys=True, ensure_ascii=False))
+            if key not in seen_acts:
+                seen_acts.add(key)
+                unique_acts.append(a)
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=4) as pool:
             futs = [(a, pool.submit(execute, ctx, a["tool"], a.get("args", {})))
-                    for a in acts[:3]]
+                    for a in unique_acts]
             observations = []
             for a, fut in futs:
                 name = a["tool"]

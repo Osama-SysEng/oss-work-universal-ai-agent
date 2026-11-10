@@ -12,6 +12,12 @@ def xml_to_json(text):
         tool_m = re.search(r"([a-zA-Z_]\w*)(<arg_key>)", text[pos:])
         if not tool_m:
             result.append(text[last_end:])
+            # 10 Nov live bug (found while wiring the strong free brain —
+            # nemotron probe doubled EVERY plain reply): breaking here used
+            # to skip setting last_end, so the final `if last_end < len`
+            # below appended the text AGAIN — every action executed TWICE
+            # in every wave.
+            last_end = len(text)
             break
         tool_start = pos + tool_m.start()
         tool_name = tool_m.group(1)

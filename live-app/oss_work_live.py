@@ -37,7 +37,6 @@ import sys
 import tempfile
 import threading
 import time
-
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -50,7 +49,12 @@ from pathlib import Path
 
 from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    StreamingResponse,
+)
 from pydantic import BaseModel
 
 import osv_gateway
@@ -156,9 +160,8 @@ def _relevance_ok(query: str, text: str) -> bool:
 def needs_llm(message: str, mode: str, context_len: int) -> bool:
     if _RX_BUILD.search(message) or _RX_GENERATIVE.search(message):
         return True
-    if mode in ("web+wiki", "wiki", "web") and context_len > 250:
-        return False          # grounded literal answer is sufficient
-    return True               # thin retrieval — let the model reason
+    # grounded literal answer suffices -> no LLM; thin retrieval -> reason
+    return not (mode in ("web+wiki", "wiki", "web") and context_len > 250)
 
 
 def _wiki_digest(wiki_text: str) -> str:
@@ -310,7 +313,7 @@ def _clean_ddg_href(href: str) -> str:
         if m:
             try:
                 return urllib.parse.unquote(m.group(1))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110 — odd URL, harmless skip
                 pass
     if href.startswith("//"):
         return "https:" + href
@@ -375,7 +378,7 @@ def _decode_bing_redirect(url: str) -> str:
     b64 += "=" * (-len(b64) % 4)
     try:
         return base64.urlsafe_b64decode(b64).decode("utf-8", errors="replace")
-    except Exception:
+    except Exception:  # noqa: BLE001 — plain URL: falls back to itself
         return url
 
 
@@ -482,7 +485,7 @@ def _fetch_page_text(url: str) -> str:
             return ""
         text = _strip_html(html)
         return text[:900] if len(text) > 150 else ""
-    except Exception:
+    except Exception:  # noqa: BLE001 — fetch failure = no snippet, not fatal
         return ""
 
 
@@ -515,7 +518,7 @@ def _wiki_extract(lang: str, query: str) -> tuple[str, list[str]]:
                 chunks.append(f"[{title}]\n{text}")
                 titles.append(title)
         return "\n\n".join(chunks)[:2600], titles
-    except Exception:
+    except Exception:  # noqa: BLE001 — wiki is optional context, never fatal
         return "", []
 
 
@@ -535,7 +538,7 @@ def engine_alive() -> bool:
     try:
         with urllib.request.urlopen(f"{ENGINE_URL}/health", timeout=4) as r:
             return r.status == 200
-    except Exception:
+    except Exception:  # noqa: BLE001 — a down engine is an answer, not a crash
         return False
 
 
@@ -568,7 +571,7 @@ def engine_stream(messages: list[dict]):
             try:
                 chunk = json.loads(data_str)
                 delta = chunk["choices"][0].get("delta", {}).get("content")
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 — chunk garbled: next one
                 continue
             if delta:
                 yield delta
@@ -601,7 +604,7 @@ def _load_cache():
     try:
         if CACHE_PATH.exists():
             _cache = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception:  # noqa: BLE001 — corrupt cache is rebuilt, not fatal
         _cache = {}
 
 
@@ -611,7 +614,7 @@ def _save_cache():
         CACHE_PATH.write_text(
             json.dumps(_cache, ensure_ascii=False), encoding="utf-8"
         )
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 — cache write is best-effort
         pass
 
 
@@ -675,9 +678,17 @@ CLOUD_PROVIDERS = {
     },
     "deepseek": {
         "url": "https://api.deepseek.com/chat/completions",
-        "default_model": "deepseek-chat",
+        "default_model": "deepseek-flash",
         "key_url": "https://platform.deepseek.com/api_keys",
-        "label": "DeepSeek API (رخيص جداً)",
+        "label": "DeepSeek V4 (دليل ميداني 10 نوفمبر: deepseek-flash رخيص جداً وسياق مليون توكن "
+                 "ويدعم vision؛ deepseek-v4-pro للمهام الصعبة) — 1M ctx",
+    },
+    "kimi": {
+        "url": "https://api.moonshot.ai/v1/chat/completions",
+        "default_model": "kimi-k3.1-pro",
+        "key_url": "https://platform.kimi.ai",
+        "label": "Kimi K3.1-pro (Moonshot) — سلسلة K3 هي الحالية بسياق 1,048,576 توكن؛ "
+                 "ملاحظة موثقة 10 نوفمبر: سلسلة K2 أُغلقت أمام المستخدمين الجدد منذ 31 أكتوبر 2026 وتُقاعد بديسمبر 2026 — اطلب مفتاح K3",
     },
     "github-models": {
         "url": "https://models.github.ai/inference/chat/completions",
@@ -718,7 +729,7 @@ def load_cloud_config() -> dict | None:
             cfg = json.loads(CLOUD_CONFIG_PATH.read_text(encoding="utf-8"))
             if cfg.get("provider") in CLOUD_PROVIDERS and cfg.get("key", "").strip():
                 return cfg
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 — bad file -> unconfigured provider
         pass
     return None
 
@@ -796,7 +807,7 @@ def cloud_chain(task: str | None = None) -> list[dict]:
         gw_chain = gw.ordered_chain(task=task)
         if gw_chain:
             return gw_chain
-    except Exception:  # noqa: BLE001 — gateway outage falls back to static
+    except Exception:  # noqa: BLE001, S110 — gateway outage -> static chain
         pass
     chain = []
     primary = load_cloud_config()
@@ -859,7 +870,7 @@ def _auto_fix_gemini_model(key: str) -> str | None:
                 d = json.loads(r.read().decode("utf-8"))
             if (d["choices"][0]["message"].get("content") or "").strip():
                 return name
-        except Exception:  # noqa: BLE001 — slow/hung/overloaded: next candidate
+        except Exception:  # noqa: BLE001, S112 — hung probe: next candidate
             continue
     return None
 
@@ -976,7 +987,7 @@ def cloud_stream(cfg: dict, messages: list[dict], effort: str | None = "none",
             try:
                 chunk = json.loads(data_str)
                 delta = chunk["choices"][0].get("delta", {}).get("content")
-            except Exception:
+            except Exception:  # noqa: BLE001, S112 — chunk garbled: next one
                 continue
             if delta:
                 yield delta
@@ -1014,7 +1025,7 @@ def _gw_stream(cfg: dict, messages: list[dict], effort: str | None = "none",
             osv_gateway.record_fail(gw_id, is_429, cfg["provider"], cfg.get("model", ""))
             if is_429:
                 osv_gateway.cooldown(gw_id, 90.0)
-        except Exception:  # noqa: BLE001 — learning never breaks serving
+        except Exception:  # noqa: BLE001, S110 — learning never breaks serving
             pass
         raise
     finally:
@@ -1022,7 +1033,7 @@ def _gw_stream(cfg: dict, messages: list[dict], effort: str | None = "none",
             try:
                 elapsed = max(0.05, time.monotonic() - t0)
                 osv_gateway.record_success(gw_id, ttfb, tokens / elapsed, tokens)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001, S110 — stats logging is soft
                 pass
 
 
@@ -1174,7 +1185,7 @@ async def lifespan(app: FastAPI):
         import osv_gateway as gw
         gw.init(seed_providers=gw.seed_providers())
         gw.ensure_local_key()
-    except Exception:  # noqa: BLE001 — gateway outage must never block boot
+    except Exception:  # noqa: BLE001, S110 — gateway must not block boot
         pass
     yield
 
@@ -1683,6 +1694,22 @@ def gateway_status():
         return {"ok": False, "message": str(exc)[:120]}
 
 
+@app.post("/api/v1/gateway/register-brain")
+def register_brain(req: CloudConfigRequest):
+    """10 Nov merged-brain wiring (user's REA+Craft plan): register a strong
+    cloud brain (kimi / deepseek / …) into the gateway pool with an
+    encrypted key. Cloud strength, zero local hardware cost. The gateway's
+    task-aware bandit already prefers intelligence for code tasks."""
+    try:
+        info = osv_gateway.register_brain(req.provider, req.key,
+                                          model=req.model or None)
+        return {"ok": True, "message": "سُجّل العقل في البوابة (مفتاح مشفّر)", **info}
+    except KeyError as exc:
+        return {"ok": False, "message": str(exc).strip("'\"")}
+    except Exception as exc:  # noqa: BLE001 — honest failure, not a fake one
+        return {"ok": False, "message": f"تعذر التسجيل: {exc}"[:160]}
+
+
 @app.post("/api/v1/gateway/issue-key")
 def gateway_issue_key():
     """Issue a new unified monthly key. The raw key is shown ONCE here —
@@ -1840,15 +1867,15 @@ def _agent_setup(req: AgentRequest):
     device kit, merged tools, learned brief, resume prior. None = no chain."""
     import osv_agent as ag
     import osv_device as dv
-    import osv_team as tm
-    import osv_memory as mem
-    import osv_media as md
-    import osv_sec as sec
-    import osv_mcp
+    import osv_distill
     import osv_git
     import osv_longio
+    import osv_mcp
+    import osv_media as md
+    import osv_memory as mem
+    import osv_sec as sec
     import osv_sessions as sessions
-    import osv_distill
+    import osv_team as tm
 
     chain = cloud_chain(task="code")
     if not chain:
@@ -1912,8 +1939,9 @@ def _agent_execute(setup: dict, req: AgentRequest, on_event) -> dict:
         if doc is None:
             doc = pj.plan(req.task, chain, _gw_stream)
         if doc is None:
-            final, ok = ("تعذرت صياغة خطة مشروع — لا خطة وهمية. أعد "
-                         "المحاولة بصياغة أوضح للهدف.", False)
+            msg = ("تعذرت صياغة خطة مشروع — لا خطة وهمية. أعد "
+                   "المحاولة بصياغة أوضح للهدف.")
+            final, ok = msg, False
         else:
             if not pj.load(req.session_id):
                 pj.save(req.session_id, doc)
@@ -2007,7 +2035,7 @@ def _agent_execute(setup: dict, req: AgentRequest, on_event) -> dict:
             if ok:
                 osv_distill.distill_from_run(req.task, files, chain,
                                              _gw_stream)
-        except Exception:  # noqa: BLE001 — learning must not break serving
+        except Exception:  # noqa: BLE001, S110 — learning never breaks serving
             pass
 
     # --- حفظ الجلسة: الاستئناف لاحقاً يبدأ من هذه المحادثة بالضبط
@@ -2015,12 +2043,12 @@ def _agent_execute(setup: dict, req: AgentRequest, on_event) -> dict:
     if req.mode != "team":
         try:
             sessions.save(req.session_id, req.task, ctx.msgs, ws)
-        except Exception:  # noqa: BLE001 — persistence must not break serving
+        except Exception:  # noqa: BLE001, S110 — save must not break serving
             pass
 
     try:
         mem.record_run(req.task, ok, tools_used, steps_n, (final or "")[:200])
-    except Exception:  # noqa: BLE001 — learning must never break serving
+    except Exception:  # noqa: BLE001, S110 — memory must not break serving
         pass
 
     return {"final": final, "ok": ok, "steps": steps_n,
@@ -2572,7 +2600,7 @@ def code_fix(req: CodeFixRequest):
             ], effort="low")).strip()
             if reply:
                 break
-        except Exception:  # noqa: BLE001 — next in chain
+        except Exception:  # noqa: BLE001, S112 — next in the failover chain
             continue
     if not reply:
         return {"ok": False, "code": "", "message": "تعذر التصحيح — كل مزودات البوابة غير متاحة الآن."}
@@ -2651,7 +2679,7 @@ def _cloud_complete(chain: list[dict], messages: list[dict],
             if text:
                 _healthy["provider"] = cfg["provider"]
                 return text, cfg
-        except Exception:  # noqa: BLE001 — 429/timeout: next in chain
+        except Exception:  # noqa: BLE001, S112 — 429/timeout: next in chain
             continue
     return None
 
@@ -2838,7 +2866,7 @@ def _verify_project(files: list[tuple[str, str]]) -> dict:
                             broken.append((path, (r.stderr or "").strip()[:200]))
                     finally:
                         os.unlink(tmp)
-                except Exception:  # noqa: BLE001 — checker failure ≠ file failure
+                except Exception:  # noqa: BLE001, S110 — checker fail ≠ file fail
                     pass
     return {"missing": sorted(missing)[:4], "broken": broken[:3]}
 

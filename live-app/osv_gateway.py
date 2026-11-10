@@ -226,6 +226,65 @@ def seed_providers() -> list[dict]:
     return seed
 
 
+def upsert_provider(name: str, base_url: str, key: str = "", model: str = "",
+                    size_label: str = "Medium", intelligence_rank: float = 50.0) -> None:
+    """Insert OR update one provider row (idempotent by name). Plain INSERT
+    OR IGNORE (seed path) can never update a key — re-registering a brain
+    with a renewed key must REPLACE the credential, not be swallowed."""
+    _DIR.mkdir(parents=True, exist_ok=True)
+    con = _connect()
+    try:
+        con.executescript(_SCHEMA)
+        con.execute(
+            "INSERT INTO providers (name, base_url, api_key_enc, model, "
+            "size_label, intelligence_rank) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET base_url=excluded.base_url, "
+            "api_key_enc=excluded.api_key_enc, model=excluded.model, "
+            "size_label=excluded.size_label, "
+            "intelligence_rank=excluded.intelligence_rank, enabled=1, "
+            "status='unknown'",
+            (name, base_url, encrypt_key(key or ""), model or "", size_label,
+             float(intelligence_rank)))
+        con.execute(
+            "INSERT OR IGNORE INTO stats (provider_id) "
+            "SELECT id FROM providers WHERE name = ?", (name,))
+        con.commit()
+    finally:
+        con.close()
+
+
+def register_brain(provider: str, key: str, model: str | None = None,
+                   size_label: str = "Frontier",
+                   intelligence_rank: float = 90.0) -> dict:
+    """The 10 Nov 'merged brain' wiring: register a CLOUD_PROVIDERS brain
+    (deepseek / kimi / …) into the gateway pool with an encrypted key and a
+    Frontier tier, so ordered_chain(task) — whose weights already shift
+    toward intelligence for code tasks — sends builds to the strongest
+    cloud members first. Zero hardware cost: everything runs in the cloud.
+    Returns what actually landed (evidence, not vibes)."""
+    import oss_work_live as m
+    spec = m.CLOUD_PROVIDERS.get(provider)
+    if not spec:
+        raise KeyError(f"مزود غير معروف: {provider}")
+    model = model or spec.get("default_model", "")
+    upsert_provider(provider, spec["url"], key=key, model=model,
+                    size_label=size_label, intelligence_rank=intelligence_rank)
+    con = _connect()
+    try:
+        row = con.execute(
+            "SELECT id, name, base_url, model, size_label, intelligence_rank, "
+            "status, api_key_enc FROM providers WHERE name = ?",
+            (provider,)).fetchone()
+    finally:
+        con.close()
+    return {"registered": True, "id": row[0], "name": row[1],
+            "base_url": row[2], "model": row[3], "size_label": row[4],
+            "intelligence_rank": row[5], "status": row[6],
+            "key_encrypted_len": len(row[7]) if row[7] else 0,
+            "key_decrypt_roundtrip": (row[7] or "") != "" and
+            decrypt_key(row[7]) == key}
+
+
 # ---------------------------------------------------------------------------
 # Scoring — ported from the analyzed scoring service
 # ---------------------------------------------------------------------------

@@ -420,8 +420,12 @@ def test_repeated_truncation_dies_honestly_not_as_raw_json(tmp_path, monkeypatch
 
 
 def test_hard_build_gets_real_token_room(tmp_path, monkeypatch):
-    """Root cause of the flaw: 3000-3500 max_tokens cannot hold a real HTML
-    file. A build task must reserve room for the file itself."""
+    """Docstring updated 10 Nov after the live wave-physics evidence (lesson
+    58): a 3610-token wave at ~0.6s/token on the local engine takes 30+ min
+    and gets zombie-reaped — so a hard build now reserves the WAVE CAP
+    (1500 tokens ≈ one solid chunk) instead of one doomed giant wave; real
+    files longer than that are written in parts (long_write), not in a
+    single oversized completion that dies mid-file."""
     seen = []
 
     def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
@@ -431,7 +435,8 @@ def test_hard_build_gets_real_token_room(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "_gw_stream", fake_gw)
     ag.run_agent("ابنِ مشروعاً كاملاً: واجهة + خلفية + اختبارات", _ctx(tmp_path),
                  [{}], lambda e: None, max_steps=2)
-    assert seen[0] >= 8000
+    assert seen[0] == 1500        # the deliberate wave cap (live physics)
+    assert seen[-1] >= 512        # and never collapses below the floor
 
 
 def test_parse_actions_tolerates_fence_without_json_tag():

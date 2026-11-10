@@ -1012,7 +1012,11 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
         reply = ""
         prov_fail: list[str] = []          # who refused and why — nothing is
         wave_msgs, room = _fits_ctx(_compact_msgs(msgs))
-        eff_max = max(512, min(max_tok, room))
+        # WAVE TOKEN CAP (9 Nov live: a 3610-token wave at ~0.6s/token took
+        # 30+ min and the zombie sweeper reaped it — a wave must finish in
+        # minutes, not half an hour. 1500 tokens is plenty for a chunked
+        # action; long files ride long_write parts, not one huge reply.)
+        eff_max = max(512, min(max_tok, room, 1500))
         for cfg in chain:                  # resume 400-ed the engine forever
             try:
                 reply = "".join(m._gw_stream(cfg, wave_msgs, effort=effort,
@@ -1031,7 +1035,7 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
             # the whole chain with full thinking. The compact event is
             # VISIBLE to the user — nothing is hidden.
             wave_msgs, room = _fits_ctx(_compact_msgs(msgs, 5000))
-            eff_max = max(512, min(max(max_tok, 9000), room))
+            eff_max = max(512, min(max(max_tok, 9000), room, 1500))
             if len(wave_msgs) != len(msgs):
                 say({"type": "status", "stage": "compact",
                      "text": "📌 تعذر النداء إلا بعد ضغط السياق: تُحذف أقدم "

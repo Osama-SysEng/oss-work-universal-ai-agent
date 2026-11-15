@@ -6,6 +6,7 @@ every 15s check both, restart whatever died, log everything.
 Run: python keep_alive.py  (window minimized)
 Stop: close the window or kill the process.
 """
+import os
 import subprocess
 import time
 import urllib.error
@@ -52,8 +53,12 @@ def start_backend():
     log("BACKEND down -> restart")
     out = open(ROOT / "backend_out.log", "a", encoding="utf-8", errors="replace")  # noqa: SIM115 — handle lives as long as the backend process
     err = open(ROOT / "backend_err.log", "a", encoding="utf-8", errors="replace")  # noqa: SIM115 — same
+    # 15 Nov live: without PYTHONIOENCODING the revived backend died on the
+    # emoji banner print (cp1252) — every watchdog revive was a guaranteed
+    # crash. The revive env must match the manual-start ritual.
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
     subprocess.Popen(["python", "oss_work_live.py"], cwd=str(ROOT),
-                     stdout=out, stderr=err,
+                     stdout=out, stderr=err, env=env,
                      creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
                      close_fds=False)
 

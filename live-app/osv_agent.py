@@ -1079,6 +1079,14 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
         # action; long files ride long_write parts, not one huge reply.)
         eff_max = max(512, min(max_tok, room, 1500))
         for cfg in chain:                  # resume 400-ed the engine forever
+            # 15 Nov live: the heartbeat fired once per STEP, but failover
+            # across providers can stay silent ~5 min per provider (300s
+            # deadline each) — the user and the zombie sweeper both read
+            # that as death. The heartbeat is per PROVIDER attempt now.
+            say({"type": "status", "stage": "wave", "step": step,
+                 "text": f"🌊 موجة {step}: نداء "
+                         f"{cfg.get('provider', '?')}/"
+                         f"{cfg.get('model', '?')} (مهلة 300s)…"})
             try:
                 reply = "".join(m._gw_stream(cfg, wave_msgs, effort=effort,
                                              timeout=300,

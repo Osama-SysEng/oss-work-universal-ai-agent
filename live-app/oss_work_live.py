@@ -976,8 +976,18 @@ def cloud_stream(cfg: dict, messages: list[dict], effort: str | None = "none",
                 time.sleep(6)
                 continue
             raise
+    started = time.monotonic()
     with resp:
         for raw_line in resp:
+            # 10 Nov live (j1794731560-3 hung 20+ min): the inactivity
+            # timeout is kept alive by a trickling upstream — a router
+            # upstream that drips bytes forever never triggers it and the
+            # whole wave hangs silently. A TOTAL wall-clock deadline ends
+            # any stream regardless of how it drips.
+            if time.monotonic() - started > timeout:
+                raise TimeoutError(
+                    f"wave total deadline {timeout}s exceeded "
+                    "(inactivity timeout kept alive by a trickling upstream)")
             line = raw_line.decode("utf-8", errors="replace").strip()
             if not line.startswith("data: "):
                 continue
@@ -1880,7 +1890,7 @@ def _agent_setup(req: AgentRequest):
     chain = cloud_chain(task="code")
     if not chain:
         return None
-    ws = Path(os.environ.get("TEMP", ".")) / "osv_agent_ws" / \
+    ws = _ws_root() / \
         re.sub(r"[^a-zA-Z0-9_-]", "_", req.session_id)[:40]
     kit = dv.DeviceKit(yolo=(req.device == "full"))
     kit.gate.engine._log("agent.run", f"device:{req.device}", "allow", "policy")
@@ -2255,9 +2265,21 @@ _PREVIEW_EXT = {".html", ".htm", ".css", ".js", ".png", ".jpg", ".jpeg",
                 ".webp", ".gif", ".svg", ".json", ".txt", ".ico"}
 
 
+def _ws_root() -> Path:
+    """Durable agent-workspace root. 10 Nov live: the machine silently wipes
+    %TEMP% (osv_agent_ws vanished twice mid-build — session s_qbrain_fc2 died
+    whole while the model was running, which is why it wandered calling
+    hallucinated tools). %APPDATA% is never auto-cleaned. OSV_WS_ROOT
+    overrides it (tests)."""
+    env = os.environ.get("OSV_WS_ROOT")
+    if env:
+        return Path(env)
+    base = os.environ.get("APPDATA") or os.environ.get("TEMP", ".")
+    return Path(base) / "osv_agent_ws"
+
+
 def _session_ws(session_id: str) -> Path:
-    return Path(os.environ.get("TEMP", ".")) / "osv_agent_ws" / \
-        re.sub(r"[^a-zA-Z0-9_-]", "_", session_id)[:40]
+    return _ws_root() / re.sub(r"[^a-zA-Z0-9_-]", "_", session_id)[:40]
 
 
 @app.get("/api/v1/agent/preview/{session_id}/{fpath:path}")

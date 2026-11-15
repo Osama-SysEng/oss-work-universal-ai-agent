@@ -76,8 +76,12 @@ def test_infinite_loop_gets_nudge_then_honest_stop(tmp_path, monkeypatch):
     monkeypatch.setattr(m, "_gw_stream", fake_gw)
     final, ok = ag.run_agent("افحص المساحة", _ctx(tmp_path), [{}],
                              lambda e: None, max_steps=14)
-    assert any("غيّر استراتيجيتك" in c for c in calls)   # first loop → nudge
-    assert not ok and "حلقة مكررة" in final              # second → honest stop
+    # 10 Nov: the nudge is DATA-DRIVEN now — it carries the workspace state
+    # and the concrete order (write_file the missing parts), not a generic
+    # «غيّر استراتيجيتك» that a looping brain ignores
+    assert any("تكررت نفس الإجراء بلا تقدم" in c and "write_file" in c
+               for c in calls)                      # first loop → nudge
+    assert not ok and "حلقة مكررة" in final         # second → honest stop
 
 
 # ---------------------------------------------------------------- require_steps
@@ -268,10 +272,15 @@ def test_compact_msgs_drops_old_and_keeps_system():
     for i in range(30):
         msgs.append({"role": "assistant" if i % 2 else "user",
                      "content": f"turn-{i} " + "x" * 1200})
-    out = ag._compact_msgs(list(msgs), budget_chars=11000)
+    out = ag._compact_msgs(list(msgs), budget_chars=11000, pin_text="turn-0")
     assert out[0]["role"] == "system"          # system survives
     assert out[1]["role"] == "user" and "ضغط سياق آلي" in out[1]["content"]
-    assert out[-1]["role"] == "assistant" and "turn-29" in out[-1]["content"]
+    # the pinned task turn (turn-0 = the first user turn) must survive
+    # compaction — 10 Nov live: dropping it made strong brains loop blindly
+    assert any("turn-0" in m["content"] for m in out)
+    # the newest turn survives (its front may be trimmed when the budget is
+    # tight — documented 9 Nov behavior); old turns are honestly dropped
+    assert out[-1]["role"] == "assistant" and "x" in out[-1]["content"]
     assert sum(len(m["content"]) for m in out) < 14000
     small = ag._compact_msgs([{"role": "user", "content": "hi"}])
     assert small == [{"role": "user", "content": "hi"}]   # small stays whole
@@ -299,10 +308,65 @@ def test_run_agent_survives_overlong_resume_via_compaction(
     task = "اعم لي موقع جودة"
     ctx = ag.AgentContext(tmp_path, "t")
     seen = []
-    _final, ok = ag.run_agent(task, ctx, [{}], seen.append, max_steps=6,
+    # provider=oss-local: this test pins the ENGINE's physics (8192-token
+    # ceiling → the 6000-char fake ceiling). Cloud heads keep full history
+    # (see test_cloud_head_wave_keeps_full_history).
+    _final, ok = ag.run_agent(task, ctx, [{"provider": "oss-local"}],
+                              seen.append, max_steps=6,
                               prior_msgs=list(big_session))
     assert max(calls["hists"]) <= 6000       # no wave ever exceeded the ceiling
     assert calls["hists"] and calls["hists"][0] <= 6000
+    assert ok is True
+
+
+def test_agent_workspace_root_is_durable():
+    """10 Nov live: the machine silently wipes %TEMP% — osv_agent_ws vanished
+    twice mid-build (s_qbrain_fc2 died whole while the model was running).
+    The workspace root must default to %APPDATA% and honor OSV_WS_ROOT."""
+    import os
+
+    import oss_work_live as live
+    old = os.environ.get("OSV_WS_ROOT")
+    try:
+        os.environ.pop("OSV_WS_ROOT", None)
+        root = live._ws_root()
+        assert root.name == "osv_agent_ws"
+        assert "Temp" not in str(root)          # never inside the wipe zone
+        os.environ["OSV_WS_ROOT"] = str(root.parent / "custom_ws")
+        assert live._ws_root().name == "custom_ws"
+    finally:
+        if old is None:
+            os.environ.pop("OSV_WS_ROOT", None)
+        else:
+            os.environ["OSV_WS_ROOT"] = old
+
+
+def test_cloud_head_wave_keeps_full_history(tmp_path, monkeypatch):
+    """10 Nov live ROOT CAUSE of the list_dir loops: cloud heads got the
+    engine's compact (task dropped after ~3 turns). A cloud head must see
+    the FULL history + the task in every wave."""
+    calls = {"waves": []}
+
+    def fake_gw(cfg, hist, effort="none", timeout=300, max_tokens=3000):
+        size = sum(len(x.get("content") or "") for x in hist)
+        calls["waves"].append((size, [dict(x) for x in hist]))
+        if len(calls["waves"]) == 1:
+            return ('```json\n{"tool": "write_file", "args": {"path": '
+                    '"a.txt", "content": "v"}}\n```')
+        return '```json\n{"tool": "done", "args": {"answer": "تم"}}\n```'
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    task = "مهمة البناء الكاملة هنا"
+    big = [{"role": "user", "content": "y" * 9000},
+           {"role": "assistant", "content": "دورة سابقة"}]
+    ctx = ag.AgentContext(tmp_path, "t")
+    seen = []
+    _final, ok = ag.run_agent(task, ctx, [{}], seen.append, max_steps=4,
+                              prior_msgs=list(big))
+    size0, hist0 = calls["waves"][0]
+    assert size0 > 9000          # no engine-style compact for a cloud head
+    assert any(task in (x.get("content") or "") for x in hist0), \
+        "the task must be visible to the cloud brain every wave"
     assert ok is True
 
 
@@ -437,6 +501,49 @@ def test_hard_build_gets_real_token_room(tmp_path, monkeypatch):
                  [{}], lambda e: None, max_steps=2)
     assert seen[0] == 1500        # the deliberate wave cap (live physics)
     assert seen[-1] >= 512        # and never collapses below the floor
+
+
+def test_compact_pins_the_task_message():
+    """10 Nov live ROOT CAUSE of the list_dir loops: the engine-tuned
+    8000-char budget was applied to cloud brains too, and the task (first
+    user turn) was the oldest — dropped after ~3 turns. A model that
+    cannot see the task cannot choose a next action."""
+    task = "ابنِ موقعاً لمباريات كرة القدم: index.html + style.css + app.js."
+    msgs = [{"role": "system", "content": "S" * 5000},
+            {"role": "user", "content": task}]
+    for _ in range(12):
+        msgs.append({"role": "assistant",
+                     "content": '```json {"tool": "list_dir"} ```'})
+        msgs.append({"role": "user", "content": "[النتيجة] فارغ." * 40})
+    out = ag._compact_msgs(msgs, 8000, pin_text=task)
+    assert any(task in (m.get("content") or "") for m in out), \
+        "compaction dropped the TASK — the model was flying blind"
+    # a giant STALE first user turn must NOT be pinned (it does not carry
+    # the task text) — the 9 Nov engine-ceiling regression stays green
+    stale = [{"role": "system", "content": "S" * 5000},
+             {"role": "user", "content": "y" * 9000},
+             {"role": "assistant", "content": "قديم"},
+             {"role": "user", "content": "المهمة الجديدة: " + task}]
+    out2 = ag._compact_msgs(stale, 8000, pin_text=task)
+    assert not any("y" * 100 in (m.get("content") or "") for m in out2), \
+        "stale giant turn was falsely pinned and busted the budget"
+    assert any(task in (m.get("content") or "") for m in out2), \
+        "resumed task (rides the newest turn) must stay visible"
+
+
+def test_cloud_head_keeps_full_history():
+    """Cloud heads (1M ctx) must not get the engine's 8000-char budget:
+    with CLOUD physics the whole history + task survive untouched."""
+    task = "مهمة البناء الكاملة هنا."
+    msgs = [{"role": "system", "content": "S" * 5000},
+            {"role": "user", "content": task}]
+    for _ in range(30):
+        msgs.append({"role": "assistant", "content": "خطوة" * 60})
+        msgs.append({"role": "user", "content": "[النتيجة] نجح." * 60})
+    out = ag._compact_msgs(msgs, ag.CLOUD_PROMPT_CAP_CHARS)
+    assert out == msgs, "cloud budget must keep the full history"
+    wave, room = ag._fits_ctx(out, ag.CLOUD_N_CTX, ag.CLOUD_PROMPT_CAP_CHARS)
+    assert wave == out and room > 10000
 
 
 def test_parse_actions_tolerates_fence_without_json_tag():

@@ -899,7 +899,8 @@ def _is_build_task(task: str) -> bool:
         r"تطبيق|متجر|واجهة|خلفية", task or ""))
 
 
-def _compact_msgs(msgs: list[dict], budget_chars: int = 8000) -> list[dict]:
+def _compact_msgs(msgs: list[dict], budget_chars: int = 8000,
+                  pin_text: str = "") -> list[dict]:
     """Session history can outgrow the ENGINE's context (live 9 Nov case:
     a 43-turn / 33,420-char resume sent 11K+ tokens to the 8192-token
     engine and got HTTP 400 FOREVER — every provider "refused" with no
@@ -924,6 +925,18 @@ def _compact_msgs(msgs: list[dict], budget_chars: int = 8000) -> list[dict]:
         kept.append(m)
         acc += add
     kept.reverse()
+    # 10 Nov live root cause of the list_dir loops: the engine-tuned 8000-char
+    # budget was applied to CLOUD brains too, and the TASK message (fresh
+    # sessions: the oldest user turn) was dropped after ~3 turns. A model
+    # that cannot see the task cannot choose a next action; it just re-probes.
+    # The task-carrying message (pin_text match) is PINNED. In resumed
+    # sessions the task rides the NEWEST turn anyway, and stale old user
+    # turns do NOT contain the task text — they are never falsely pinned.
+    if pin_text:
+        pinned = next((m_ for m_ in rest
+                       if pin_text in (m_.get("content") or "")), None)
+        if pinned is not None and not any(m_ is pinned for m_ in kept):
+            kept = [pinned] + kept
     dropped = len(rest) - len(kept)
     # a single oversized newest turn (a 17KB file dump, live 9 Nov) may have
     # busted the budget alone — trim its front BEFORE building out (editing
@@ -956,25 +969,31 @@ def _compact_msgs(msgs: list[dict], budget_chars: int = 8000) -> list[dict]:
 
 N_CTX = 8192          # the local engine's total context (physics, not a knob)
 PROMPT_CAP_CHARS = 14000   # ≈4600 tokens — leaves ~3000 tokens to generate
+# 10 Nov: the engine-tuned caps were applied to CLOUD brains too — a 1M-ctx
+# model got a 14000-char prompt with the task dropped. Cloud physics differ.
+CLOUD_N_CTX = 131072            # smallest sane cloud context (128K)
+CLOUD_PROMPT_CAP_CHARS = 120000  # ≈40K tokens — full history + task survive
 
 
-def _fits_ctx(msgs: list[dict]) -> tuple[list[dict], int]:
-    """Prompt size (chars≈tokens) vs the engine's hard 8192 ceiling:
+def _fits_ctx(msgs: list[dict], n_ctx: int = N_CTX,
+              cap: int = PROMPT_CAP_CHARS,
+              pin_text: str = "") -> tuple[list[dict], int]:
+    """Prompt size (chars≈tokens) vs the provider's context ceiling:
     returns (msgs, room_tokens). If the compacted prompt still leaves
     <1024 tokens of room, compact HARD once — a live 400 from
     prompt+max_tokens>ctx is otherwise indistinguishable from a dead
     engine and the mission dies silently (9 Nov, twice)."""
     total = sum(len(m.get("content") or "") for m in msgs)
-    room = N_CTX - (total // 3) - 512
+    room = n_ctx - (total // 3) - 512
     if room < 1024:
-        msgs = _compact_msgs(msgs, 4000)
+        msgs = _compact_msgs(msgs, 4000, pin_text=pin_text)
         total = sum(len(m.get("content") or "") for m in msgs)
-        room = N_CTX - (total // 3) - 512
+        room = n_ctx - (total // 3) - 512
     # the system prompt itself (device tools + learned brief) can bust
     # the ceiling alone — trim its TAIL (the advisory learned brief sits
     # at the end; rules/tools sit at the head) and disclose it.
-    if total > PROMPT_CAP_CHARS:
-        over = total - PROMPT_CAP_CHARS
+    if total > cap:
+        over = total - cap
         if msgs and msgs[0].get("role") == "system":
             sc = msgs[0].get("content") or ""
             keep = max(len(sc) - over, 1500)
@@ -985,7 +1004,7 @@ def _fits_ctx(msgs: list[dict]) -> tuple[list[dict], int]:
                                      "الأدوات والقواعد في الرأس كاملة]")
                 msgs = [head] + msgs[1:]
                 total = sum(len(m.get("content") or "") for m in msgs)
-                room = N_CTX - (total // 3) - 512
+                room = n_ctx - (total // 3) - 512
     return msgs, room
 
 
@@ -1043,7 +1062,17 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
             else "low"
         reply = ""
         prov_fail: list[str] = []          # who refused and why — nothing is
-        wave_msgs, room = _fits_ctx(_compact_msgs(msgs))
+        # 10 Nov live: engine physics (8192 ctx / 8000-char history budget)
+        # were applied to CLOUD heads too — the task message got compacted
+        # away after ~3 turns and the brain looped on list_dir blindly.
+        # The wave budget now follows the chain HEAD's real context.
+        cloud_head = bool(chain) and chain[0].get("provider") != "oss-local"
+        if cloud_head:
+            n_ctx, cap, budget = CLOUD_N_CTX, CLOUD_PROMPT_CAP_CHARS, 120000
+        else:
+            n_ctx, cap, budget = N_CTX, PROMPT_CAP_CHARS, 8000
+        wave_msgs, room = _fits_ctx(_compact_msgs(msgs, budget, pin_text=task),
+                                    n_ctx, cap, pin_text=task)
         # WAVE TOKEN CAP (9 Nov live: a 3610-token wave at ~0.6s/token took
         # 30+ min and the zombie sweeper reaped it — a wave must finish in
         # minutes, not half an hour. 1500 tokens is plenty for a chunked
@@ -1066,7 +1095,10 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
             # a machine state, not a dead one): compact HARD once and retry
             # the whole chain with full thinking. The compact event is
             # VISIBLE to the user — nothing is hidden.
-            wave_msgs, room = _fits_ctx(_compact_msgs(msgs, 5000))
+            wave_msgs, room = _fits_ctx(
+                _compact_msgs(msgs, 20000 if cloud_head else 5000,
+                              pin_text=task),
+                n_ctx, cap, pin_text=task)
             eff_max = max(512, min(max(max_tok, 9000), room, 1500))
             if len(wave_msgs) != len(msgs):
                 say({"type": "status", "stage": "compact",
@@ -1179,15 +1211,24 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
         recent = [s for _st, s in sigs if _st >= step - 9]
         if recent.count(recent[-1]) > 4:
             if not loop_hinted:
-                # smarter than dying: one strategy-change nudge, window re-armed
+                # smarter than dying: one strategy-change nudge, window re-armed.
+                # 10 Nov live (deepseek-v4.1-flash looped on list_dir with the
+                # files ALREADY on disk): a generic "change strategy" is too
+                # weak — the nudge now carries the workspace truth and the
+                # concrete order: read nothing, WRITE the missing parts.
                 loop_hinted = True
                 sigs.clear()
+                landed = sorted(p.name for p in ctx.workspace.rglob("*")
+                                if p.is_file())[:8]
+                state = ", ".join(landed) if landed else "لا ملفات بعد"
                 say({"type": "agent_step", "step": step,
                      "tool": "loop-nudge", "ok": True})
                 msgs.append({"role": "user", "content":
-                             "تكررت نفس الإجراء بلا تقدم. غيّر استراتيجيتك: "
-                             "قسّم المشكلة، جرّب أسلوباً آخر، أو اقرأ آخر "
-                             "[النتيجة] بدقة قبل أي إجراء جديد."})
+                             f"تكررت نفس الإجراء بلا تقدم. حالة مساحة العمل "
+                             f"الآن: {state}. القراءة لا تبني شيئاً: أنشئ أو "
+                             "أكمل الملفات الناقصة بـ write_file مباشرة (واجب "
+                             "واحد على الأقل في كل موجة)، أو أصلح المكتوب "
+                             "المكسور بأداة bash."})
                 continue
             say({"type": "agent_step", "step": step, "tool": "loop-detected", "ok": False})
             msgs.append({"role": "assistant", "content": reply})

@@ -273,6 +273,10 @@ class ActionEngine:
         arguments: dict[str, Any] = {}
         if step.tool in ("file.read", "file.list", "file.move", "file.delete"):
             arguments["path"] = step.target
+        elif step.tool == "file.write" and not (step.detail or "").strip():
+            # A write with no planned content would empty the file, or create
+            # an empty one, and report success. Refuse it and touch nothing.
+            return ToolResult(ok=False, error="no content was planned for this file; nothing was written")
         elif step.tool == "file.write":
             # The content of a write lives in the step's detail. This branch
             # used to share the path-only group above, so every planned write

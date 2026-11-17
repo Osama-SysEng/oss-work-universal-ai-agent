@@ -199,6 +199,7 @@ class AgentRunner:
         successes = [action for action in actions if action.outcome == "completed"]
         evidence = [f"- {action.action}: {action.detail[:200]}" for action in successes]
         blocked = [action for action in actions if action.outcome == "blocked"]
+        failed = [action for action in actions if action.outcome == "failed"]
 
         if context.llm.healthy():
             prompt = (
@@ -214,6 +215,10 @@ class AgentRunner:
                     text += "\n\nNot done (blocked by the safety layer):\n" + "\n".join(
                         f"- {action.action}: {action.detail}" for action in blocked
                     )
+                if failed:
+                    text += "\n\nNot done (failed):\n" + "\n".join(
+                        f"- {action.action}: {action.detail}" for action in failed
+                    )
                 return text, "local_engine"
 
         lines = [f"{agent.specialization.deliverable.capitalize()}:", ""]
@@ -225,6 +230,10 @@ class AgentRunner:
             lines.append("")
             lines.append("Blocked by the safety layer:")
             lines.extend(f"- {action.action}: {action.detail}" for action in blocked)
+        if failed:
+            lines.append("")
+            lines.append("Not done (failed):")
+            lines.extend(f"- {action.action}: {action.detail}" for action in failed)
         lines.append("")
         lines.append(f"Agent: {agent.id} — {agent.title}")
         lines.append(f"Planned steps: {len(plan.steps)} (plan source: {self.plan_source})")

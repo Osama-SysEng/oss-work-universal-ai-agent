@@ -137,3 +137,18 @@ def test_a_file_creation_plan_has_no_run_step_without_code() -> None:
     tools = [step["tool"] for step in response.json()["plan"]["steps"]]
     assert "file.write" in tools
     assert "code.run" not in tools
+
+
+def test_a_write_with_no_content_is_refused_and_touches_nothing(tmp_path) -> None:
+    target = tmp_path / "keep-me.txt"
+    target.write_text("original content", encoding="utf-8")
+    response = client.post(
+        "/build",
+        json={"task": f"create a file named {target}", "agent_id": "A002"},
+    )
+    assert response.status_code == 200
+    assert target.read_text(encoding="utf-8") == "original content"
+    body = response.json()
+    assert body["status"] == "failed"
+    assert "file.write" in body["data"]["tools_used"]
+    assert "no content was planned" in response.text

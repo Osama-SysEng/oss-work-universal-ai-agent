@@ -133,6 +133,11 @@ class AgentRunner:
             for index, (tool, intent) in enumerate(agent.plan_template, start=1):
                 if tool not in tools:
                     continue
+                if tool == "code.run":
+                    # A template carries no code, so a run step here could only
+                    # fail, and one failed step fails the whole build. Runs come
+                    # only from a plan the engine wrote with the code in it.
+                    continue
                 target = ""
                 if tool.startswith("file.") or tool.startswith("sheet.") or tool.startswith("dashboard."):
                     target = paths[0] if paths else ""

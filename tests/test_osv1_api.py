@@ -124,3 +124,16 @@ def test_the_live_console_is_served() -> None:
     assert response.status_code == 200
     assert "OS_V1" in response.text
     assert "EventSource" in response.text
+
+
+def test_a_file_creation_plan_has_no_run_step_without_code() -> None:
+    # The template plan never carries code, so a code.run step could only
+    # fail and would fail the whole build. A create-file request must not get one.
+    response = client.post(
+        "/plan",
+        json={"task": "create a file named notes.txt in the workspace", "agent_id": "A002"},
+    )
+    assert response.status_code == 200
+    tools = [step["tool"] for step in response.json()["plan"]["steps"]]
+    assert "file.write" in tools
+    assert "code.run" not in tools

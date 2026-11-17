@@ -12,6 +12,10 @@ dist/
 
 # Local state (never committed)
 data-osv1/
+osv_data/
+osv_agent_ws/
+live-app/osv_data/
+live-app/osv_agent_ws/
 skills-osv1/
 workspace/
 data/

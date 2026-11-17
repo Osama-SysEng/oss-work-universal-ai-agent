@@ -63,7 +63,8 @@ def test_every_api_endpoint_in_the_prd_exists_in_the_code() -> None:
 
 def test_no_secret_is_committed() -> None:
     pattern = re.compile(r"sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}")
-    skip = {".git", "__pycache__", "data-osv1", "node_modules", ".pytest_cache", "workspace"}
+    skip = {".git", "__pycache__", "data-osv1", "node_modules", ".pytest_cache", "workspace",
+            "osv_data", "osv_agent_ws"}
     for path in ROOT.rglob("*"):
         if not path.is_file() or any(part in skip for part in path.parts):
             continue

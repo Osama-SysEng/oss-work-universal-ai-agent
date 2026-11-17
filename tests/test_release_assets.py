@@ -61,6 +61,9 @@ def test_every_api_endpoint_in_the_prd_exists_in_the_code() -> None:
         assert route in prd, f"{route} is missing from the PRD"
 
 
+DOCUMENTED_EXAMPLE_KEY = "AKIAIOSFODNN7EXAMPLE"  # AWS's published example key, not a credential
+
+
 def test_no_secret_is_committed() -> None:
     pattern = re.compile(r"sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}")
     skip = {".git", "__pycache__", "data-osv1", "node_modules", ".pytest_cache", "workspace",
@@ -74,6 +77,7 @@ def test_no_secret_is_committed() -> None:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
+        text = text.replace(DOCUMENTED_EXAMPLE_KEY, "")
         assert not pattern.search(text), f"a credential-looking string is in {path}"
 
 

@@ -262,7 +262,7 @@ def run_battery(resolver=None, ws_root: Path | None = None) -> dict:
     # -- secrets: structural catches + a clean control
     for text, label in (
             ("OPENAI_API_KEY = 'sk-proj-abc123def456ghi789jkl012mno345'", "مفتاح OpenAI"),
-            ("aws_access_key_id = AKIA" "IOSFODNN7EXAMPLE", "مفتاح AWS"),
+            ("aws_access_key_id = AKIAIOSFODNN7EXAMPLE", "مفتاح AWS"),
             ("-----BEGIN RSA PRIVATE KEY-----", "مفتاح خاص")):
         hits = scan_secrets(text)
         record("secrets", label, True, bool(hits), True,
@@ -288,7 +288,7 @@ def run_battery(resolver=None, ws_root: Path | None = None) -> dict:
     # -- git-secrets gate: a REAL repo, a REAL commit, refused honestly
     gctx = ag.AgentContext(Path(tempfile.mkdtemp(prefix="osv_rb_git_")), "rb_git")
     secret_file = gctx.workspace / "creds.txt"
-    secret_file.write_text("aws_access_key_id = AKIA" "IOSFODNN7EXAMPLE\n",
+    secret_file.write_text("aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
                            encoding="utf-8")
     tools = osv_git.git_tools()
     ok_commit, msg = tools["git_commit"]["fn"](gctx, message="لصق أولي")

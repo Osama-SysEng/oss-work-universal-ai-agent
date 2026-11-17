@@ -24,7 +24,7 @@ def _resolver_public(_host: str) -> set[str]:
 
 def test_scan_secrets_all_families():
     assert rt.scan_secrets("k = 'sk-proj-abc123def456ghi789jkl012mno345'")
-    assert rt.scan_secrets("AKIA" "IOSFODNN7EXAMPLE")
+    assert rt.scan_secrets("AKIAIOSFODNN7EXAMPLE")
     assert rt.scan_secrets("ghp_" + "a" * 36)
     assert rt.scan_secrets("AIza" + "a" * 35)
     assert rt.scan_secrets("-----BEGIN RSA PRIVATE KEY-----")
@@ -41,7 +41,7 @@ def test_scan_secrets_placeholder_skipped_and_masked():
 def test_screen_commit_refuses_secret_names_the_file(tmp_path):
     (tmp_path / "a.txt").write_text("نظيف\n", encoding="utf-8")
     (tmp_path / "creds.txt").write_text(
-        "aws_access_key_id = AKIA" "IOSFODNN7EXAMPLE\n", encoding="utf-8")
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n", encoding="utf-8")
     ok, msg = rt.screen_commit(tmp_path, ["a.txt", "creds.txt"])
     assert not ok and "creds.txt" in msg and "AKIA" not in msg
 

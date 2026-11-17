@@ -167,6 +167,13 @@ def tool_bash(ctx: AgentContext, command: str) -> tuple[bool, str]:
         if "' is not recognized" in err or "' is not recognized" in out:
             obs += ("\n💡 هذا cmd ويندوز: ls←dir، grep←findstr، cat←type، "
                     "python3←python، rm←del، mkdir متاح كما هو.")
+        # 17 Nov live: `python -c "...; for row in ..."` is invalid Python —
+        # a compound statement cannot follow `-c` on one line. Quotes now
+        # survive, so the fix is a script file, and the model should hear it.
+        if (p.returncode != 0 and "python -c" in command
+                and ("SyntaxError" in err or "SyntaxError" in out)):
+            obs += ("\n💡 الكتل (for/if/with) لا تُكتب داخل python -c بسطر "
+                    "واحد — اكتب السكربت بـ write_file ثم شغّله: python script.py.")
         # bloat guard: a runaway command must be visible to the model at once
         try:
             total = sum(f.stat().st_size for f in ctx.workspace.rglob("*") if f.is_file())

@@ -29,6 +29,7 @@ import osv_bash
 import osv_cloud
 import osv_rea
 import osv_redteam
+import osv_text
 import osv_xml_parse as _x
 
 MAX_STEPS = 24          # رأسية للمشاريع الكبيرة (كانت 14 — البناء الواسع يحتاج دورات أكثر)
@@ -211,9 +212,10 @@ def tool_write_file(ctx: AgentContext, path: str, content: str) -> tuple[bool, s
     if p is None:
         return False, f"مسار خارج مساحة العمل مرفوض: {path}"
     try:
+        content, removed = osv_text.strip_invisibles(content)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
-        return True, f"كُتب {path} ({len(content)} حرفاً)"
+        return True, f"كُتب {path} ({len(content)} حرفاً)" + osv_text.note(removed)
     except Exception as exc:  # noqa: BLE001
         return False, f"تعذر الكتابة: {exc}"
 

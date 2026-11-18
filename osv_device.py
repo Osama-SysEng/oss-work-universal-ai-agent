@@ -18,6 +18,7 @@ import subprocess
 from pathlib import Path
 
 import osv_bash
+import osv_text
 from osv_permissions import AskDenied, PermissionGate, default_rules_for_device_control
 
 CMD_TIMEOUT_S = 45
@@ -211,9 +212,10 @@ class DeviceKit:
         if denied:
             return False, denied
         try:
+            content, removed = osv_text.strip_invisibles(content)
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content, encoding="utf-8")
-            return True, f"كُتب {path} ({len(content)} حرفاً)"
+            return True, f"كُتب {path} ({len(content)} حرفاً)" + osv_text.note(removed)
         except Exception as exc:  # noqa: BLE001
             return False, f"تعذر الكتابة: {exc}"
 

@@ -6,10 +6,12 @@ every 15s check both, restart whatever died, log everything.
 Run: python keep_alive.py  (window minimized)
 Stop: close the window or kill the process.
 """
+import faulthandler
 import os
 import subprocess
 import sys
 import time
+import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -132,13 +134,24 @@ def _compiles(path: Path) -> bool:
 
 
 def main():
+    # 18 Nov live: the watchdog proved 8080 then vanished without a trace —
+    # no CYCLE ERROR, no frozen cycle. pythonw has no console, so a hard fault
+    # is invisible. faulthandler + an explicit heartbeat make silence readable.
+    fault = (ROOT / "watchdog_fault.log").open("a", encoding="utf-8")
+    faulthandler.enable(file=fault, all_threads=True)
     log("keep_alive watchdog started")
     engine_grace = 0
+    ticks = 0
     while True:
         try:
             engine_grace = _cycle(engine_grace)
-        except Exception as exc:  # noqa: BLE001 — one bad cycle must not kill the guard
-            log(f"CYCLE ERROR {type(exc).__name__}: {str(exc)[:200]}")
+        except Exception:  # noqa: BLE001 — one bad cycle must not kill the guard
+            log("CYCLE ERROR " + " | ".join(
+                traceback.format_exc().splitlines()[-2:])[:400])
+        ticks += 1
+        if ticks % 4 == 0:
+            log(f"heartbeat: 8080 {'up' if alive('http://127.0.0.1:8080/') else 'down'}, "
+                f"8000 {'up' if alive('http://127.0.0.1:8000/api/health') else 'down'}")
         time.sleep(15)
 
 

@@ -13,6 +13,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import osv_text
+
 # ~3.2 chars per token for mixed Arabic/English/code (conservative mean)
 _CHARS_PER_TOKEN = 3.2
 _PART_SUFFIX = ".part{:04d}"
@@ -147,6 +149,7 @@ def long_write(ctx, path: str, content: str, part: int = 1, total: int = 1,
     m = re.match(r"^```[a-zA-Z0-9_+-]*\n(.*)\n```\s*$", text, re.DOTALL)
     if m:
         text = m.group(1)
+    text, _removed = osv_text.strip_invisibles(text)
     final = part == total
     mode = "wb" if part == 1 else "ab"
     try:

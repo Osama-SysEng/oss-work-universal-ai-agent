@@ -17,6 +17,8 @@ import shlex
 import subprocess
 from pathlib import Path
 
+import osv_bash
+import osv_text
 from osv_permissions import AskDenied, PermissionGate, default_rules_for_device_control
 
 CMD_TIMEOUT_S = 45
@@ -210,9 +212,10 @@ class DeviceKit:
         if denied:
             return False, denied
         try:
+            content, removed = osv_text.strip_invisibles(content)
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content, encoding="utf-8")
-            return True, f"كُتب {path} ({len(content)} حرفاً)"
+            return True, f"كُتب {path} ({len(content)} حرفاً)" + osv_text.note(removed)
         except Exception as exc:  # noqa: BLE001
             return False, f"تعذر الكتابة: {exc}"
 
@@ -241,7 +244,7 @@ class DeviceKit:
         env["PYTHONIOENCODING"] = "utf-8"
         try:
             p = subprocess.run(
-                ["cmd", "/c", command] if os.name == "nt" else ["bash", "-c", command],
+                osv_bash.build_argv(command),
                 check=False, env=env, capture_output=True, text=True,
                 stdin=subprocess.DEVNULL,   # OpenClaw port: empty stdin — no blocking readers
                 timeout=CMD_TIMEOUT_S, encoding="utf-8", errors="replace")
@@ -250,6 +253,12 @@ class DeviceKit:
                 obs += f"\nstdout:\n{p.stdout.strip()}"
             if p.stderr.strip():
                 obs += f"\nstderr:\n{p.stderr.strip()}"
+            if p.returncode != 0 and (". venv/bin/activate" in command
+                                      or "venv/Scripts" in command
+                                      or "/bin/bash" in command):
+                obs += ("\n💡 هذا ويندوز: لا تستخدم venv/bin/activate — بايثون "
+                        "جاهز والمكتبات مثبتة (openpyxl/pandas)؛ اكتب السكربت "
+                        "بأداة write_file ثم شغّله بـ python script.py.")
             return p.returncode == 0, _clip(obs)
         except subprocess.TimeoutExpired:
             return False, f"انتهت مهلة الأمر ({CMD_TIMEOUT_S}s) — أُلغي"

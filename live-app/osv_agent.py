@@ -25,9 +25,11 @@ import subprocess
 import time
 from pathlib import Path
 
+import osv_bash
 import osv_cloud
 import osv_rea
 import osv_redteam
+import osv_text
 import osv_xml_parse as _x
 
 MAX_STEPS = 24          # رأسية للمشاريع الكبيرة (كانت 14 — البناء الواسع يحتاج دورات أكثر)
@@ -66,6 +68,17 @@ _BASH_ENV = {
     "USERPROFILE": os.environ.get("USERPROFILE", ""),
     "PYTHONIOENCODING": "utf-8",
 }
+
+# 17 Nov live: `cmd /c python -c "import openpyxl; print(...)"` strips the
+# quotes on Windows → the model saw `SyntaxError: unterminated string` and
+# concluded the library was missing (it was installed: 3.1.5). Commands with
+# no shell syntax whose first token is a real executable are run as argv,
+# bypassing cmd's quote mangling entirely (shared with device_exec).
+
+
+def _plain_argv(command: str) -> list[str] | None:
+    """Kept as a thin alias so existing callers/tests stay valid."""
+    return osv_bash.plain_argv(command)
 
 
 class AgentContext:
@@ -138,7 +151,7 @@ def tool_bash(ctx: AgentContext, command: str) -> tuple[bool, str]:
     ok_rce, why_rce = osv_redteam.cmd_screen(command or "")
     if not ok_rce:
         return False, f"أمر مرفوض بوابة الأمن: {why_rce}"
-    argv = ["cmd", "/c", command] if os.name == "nt" else ["bash", "-c", command]
+    argv = osv_bash.build_argv(command)
     p = None
     try:
         p = subprocess.Popen(argv, cwd=str(ctx.workspace), env=_BASH_ENV,
@@ -155,6 +168,13 @@ def tool_bash(ctx: AgentContext, command: str) -> tuple[bool, str]:
         if "' is not recognized" in err or "' is not recognized" in out:
             obs += ("\n💡 هذا cmd ويندوز: ls←dir، grep←findstr، cat←type، "
                     "python3←python، rm←del، mkdir متاح كما هو.")
+        # 17 Nov live: `python -c "...; for row in ..."` is invalid Python —
+        # a compound statement cannot follow `-c` on one line. Quotes now
+        # survive, so the fix is a script file, and the model should hear it.
+        if (p.returncode != 0 and "python -c" in command
+                and ("SyntaxError" in err or "SyntaxError" in out)):
+            obs += ("\n💡 الكتل (for/if/with) لا تُكتب داخل python -c بسطر "
+                    "واحد — اكتب السكربت بـ write_file ثم شغّله: python script.py.")
         # bloat guard: a runaway command must be visible to the model at once
         try:
             total = sum(f.stat().st_size for f in ctx.workspace.rglob("*") if f.is_file())
@@ -192,9 +212,10 @@ def tool_write_file(ctx: AgentContext, path: str, content: str) -> tuple[bool, s
     if p is None:
         return False, f"مسار خارج مساحة العمل مرفوض: {path}"
     try:
+        content, removed = osv_text.strip_invisibles(content)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
-        return True, f"كُتب {path} ({len(content)} حرفاً)"
+        return True, f"كُتب {path} ({len(content)} حرفاً)" + osv_text.note(removed)
     except Exception as exc:  # noqa: BLE001
         return False, f"تعذر الكتابة: {exc}"
 
@@ -442,7 +463,12 @@ def system_prompt(task: str, table: dict | None = None) -> str:
         "بكودك الجديد (لا تنسخ شعارات أو صوراً أو نصوصاً مملوكة)، (ج) بعد البناء "
         "rea_check: نسبة تقارب مُقاسة وفروق معلنة، (د) أصلح الفروق الأخطر وكرر "
         "الفحص. ما لم تراه ببارصتك مجهول: سجّله بـ rea_evidence unknown لا "
-        "تختلقه — المنطق غير الظاهر يبقى مجهولاً معلناً.")
+        "تختلقه — المنطق غير الظاهر يبقى مجهولاً معلناً.\n"
+        "15. الحقائق الحية (إصدارات، أسعار، تواريخ، أخبار) تأتي من أدواتك لا من "
+        "ذاكرتك: انسخ رقم web_search/web_fetch كما ظهر حرفياً مع تاريخ اليوم، "
+        "وصحّح أي رقم في ملف موجود يخالف الأداة. عند تعارض مصدرين اذكر التعارض "
+        "صراحة؛ وممنوع تقديم إصدار مألوف على أنه «الأحدث» دون تأكيد من أداة "
+        "في هذه الجلسة.")
 
 
 def _sig(name: str, args: dict) -> str:

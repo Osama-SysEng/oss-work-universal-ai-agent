@@ -55,7 +55,7 @@ RULES = [
      "مفتاح خاص ملتصق بالكود — انقله لملف خارجي مُدار ومتغير بيئة",
      None),
     ("token-literal", "critical",
-     re.compile(r"\b(ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[bpars]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,})\b"),
+     re.compile(r"\b(ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{20,}|sk_(?:live|test)_[A-Za-z0-9]{16,}|xox[bpars]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,})\b"),
      "توكن مزود مكشوف — ألغِه من لوحة المزود وأعد توليده، واضعه في .env غير مُرحَّل",
      None),
     ("password-literal", "critical",
@@ -196,7 +196,15 @@ def report_text(res: dict, limit: int = 40) -> str:
 def sec_tools() -> dict:
     """Agent-facing registry — scan is read-only (always allowed)."""
     def _scan(ctx, path="", **a):
-        root = path or str(ctx.workspace)
+        # 18 Nov live: a relative path was resolved against the PROCESS cwd
+        # (Desktop) and the scan walked 3970 unrelated files. Relative means
+        # relative to the agent workspace, always.
+        if not path:
+            root = ctx.workspace
+        else:
+            root = Path(path)
+            if not root.is_absolute():
+                root = ctx.workspace / root
         try:
             res = scan_project(root)
             return True, report_text(res, 25)

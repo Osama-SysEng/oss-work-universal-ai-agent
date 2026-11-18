@@ -88,9 +88,10 @@ def to_english(prompt: str) -> tuple[str, bool]:
     return prompt, False
 
 
-def media_dir() -> Path:
-    d = Path(os.environ.get("OSV_MEDIA_DIR")
-             or (Path(__file__).resolve().parent / "media"))
+def media_dir(base: Path | None = None) -> Path:
+    d = Path(base) if base is not None else Path(
+        os.environ.get("OSV_MEDIA_DIR")
+        or (Path(__file__).resolve().parent / "media"))
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -155,7 +156,8 @@ def _verify_video(p: Path) -> bool:
 
 
 def _ltx_generate(prompt: str, duration_s: float, width: int, height: int,
-                  seed: int | None, image_path: str | None = None
+                  seed: int | None, image_path: str | None = None,
+                  out_base: Path | None = None
                   ) -> tuple[Path, int]:
     """TRUE text-to-video via the public LTX-Video-distilled Space (ZeroGPU).
     Returns (mp4_path, seed_used); raises on any failure — the caller falls
@@ -185,7 +187,7 @@ def _ltx_generate(prompt: str, duration_s: float, width: int, height: int,
     src = video.get("video") if isinstance(video, dict) else video
     if not src:
         raise RuntimeError("استجابة بلا ملف فيديو")
-    out = media_dir() / time.strftime("osv_vid_%Y%m%d_%H%M%S.mp4")
+    out = media_dir(out_base) / time.strftime("osv_vid_%Y%m%d_%H%M%S.mp4")
     shutil.copyfile(src, out)
     if out.stat().st_size < 10_000:
         raise RuntimeError("ملف الفيديو ضئيل — يُرفض")
@@ -206,7 +208,7 @@ class MediaKit:
 
     def generate_image(self, prompt: str, width: int = 1024, height: int = 1024,
                        model: str = DEFAULT_MODEL, seed: int | None = None,
-                       attempts: int | None = None
+                       attempts: int | None = None, out_base: Path | None = None
                        ) -> tuple[bool, str]:
         prompt = (prompt or "").strip()
         if not prompt:
@@ -229,7 +231,7 @@ class MediaKit:
                     continue
                 img = Image.open(io.BytesIO(data))   # PIL re-opens = really decodable
                 img.load()
-                out = media_dir() / (time.strftime("osv_img_%Y%m%d_%H%M%S") + ext)
+                out = media_dir(out_base) / (time.strftime("osv_img_%Y%m%d_%H%M%S") + ext)
                 out.write_bytes(data)
                 tr_note = " (ترجمنا وصفك للإنجليزية — محرك الصور يفهمها فقط)" if translated else ""
                 return True, (f"صورة مولّدة: {out} ({img.width}x{img.height}, "
@@ -260,13 +262,15 @@ class MediaKit:
 
     def generate_video(self, prompt: str | list[str], duration_s: int = 5,
                        width: int = 704, height: int = 512,
-                       image_path: str | None = None, **a) -> tuple[bool, str]:
+                       image_path: str | None = None,
+                       out_base: Path | None = None, **a) -> tuple[bool, str]:
         """TRUE video with real motion (LTX-Video, open source) — ONE continuous
         scene described richly. image_path = صورة بداية (image-to-video، روح
         Genjutsu). The stitched-keyframes lane survives only as the honest
         fallback and SAYS it is not a true video."""
         if isinstance(prompt, (list, tuple)):
             prompt = "، ".join(str(p).strip() for p in prompt if str(p).strip())
+        self._out_base = out_base
         prompt = (prompt or "").strip()
         if not prompt:
             return False, "الوصف فارغ — صف المشهد المتحرك الذي تريده"
@@ -283,7 +287,8 @@ class MediaKit:
         reason = ""
         for ci, (cw, ch, cd) in enumerate(configs):
             try:
-                out, seed = _ltx_generate(prompt, cd, cw, ch, None, image_path)
+                out, seed = _ltx_generate(prompt, cd, cw, ch, None, image_path,
+                                          out_base=getattr(self, "_out_base", None))
                 if not _verify_mp4(out):
                     raise RuntimeError("الملف ليس MP4 سليماً")
                 retried = (" (أعدنا المحاولة بالأبعاد المجرَّبة 704x512@5s)"
@@ -318,7 +323,8 @@ class MediaKit:
             # attempts=2: البديل يجب أن يفشل بسرعة ليتحول الوكيل لممر الحركة
             # (مقدمات الكاميرا) بدل حرق دقائق في إعادة السحب على خدمة مُقيَّدة
             ok, obs = self.generate_image(p, width, height, DEFAULT_MODEL,
-                                          attempts=2)
+                                          attempts=2,
+                                          out_base=getattr(self, "_out_base", None))
             if not ok:
                 return False, f"فشل المشهد {i + 1}: {obs}"
             path = obs.split(": ", 1)[1].split(" (")[0]
@@ -327,7 +333,7 @@ class MediaKit:
             frames.append(img)
         if len(frames) < SCENES_MIN:
             return False, "مشاهد صالحة أقل من الحد"
-        out = media_dir() / time.strftime("osv_vid_%Y%m%d_%H%M%S.webp")
+        out = media_dir(getattr(self, "_out_base", None)) / time.strftime("osv_vid_%Y%m%d_%H%M%S.webp")
         try:
             frames[0].save(out, save_all=True, append_images=frames[1:],
                            duration=1600, loop=0, method=4)
@@ -356,28 +362,33 @@ def media_tools(kit: MediaKit) -> dict:
         if not prompt and prompts:
             prompt = prompts
         return kit.generate_video(prompt, duration_s, int(width), int(height),
-                                  image_path=image_path)
+                                  image_path=image_path,
+                                  out_base=ctx.workspace / "media")
 
     def _motion(ctx, image="", preset="zoom_in", duration_s=5, fps=30,
                 width=704, height=512, **a):
         import osv_motion as mo
         return mo.motion_clip(str(image), str(preset), float(duration_s),
-                              int(fps), int(width), int(height))
+                              int(fps), int(width), int(height),
+                              out_base=ctx.workspace / "media")
 
     def _genjutsu(ctx, image="", presets=None, duration_s=4, **a):
         import osv_motion as mo
         if isinstance(presets, str):
             presets = [p.strip() for p in presets.split(",") if p.strip()]
-        return mo.genjutsu_variants(str(image), presets, float(duration_s))
+        return mo.genjutsu_variants(str(image), presets, float(duration_s),
+                                    out_base=ctx.workspace / "media")
 
     def _cinema(ctx, scenes=None, transition="crossfade", fps=30, **a):
         import osv_motion as mo
-        return mo.compose_cinema(scenes or [], str(transition), int(fps))
+        return mo.compose_cinema(scenes or [], str(transition), int(fps),
+                                 out_base=ctx.workspace / "media")
 
     return {
         "image_generate": {
             "fn": lambda ctx, prompt="", width=1024, height=1024, model=DEFAULT_MODEL, **a:
-                kit.generate_image(prompt, int(width), int(height), str(model)),
+                kit.generate_image(prompt, int(width), int(height), str(model),
+                                   out_base=ctx.workspace / "media"),
             "args": {"prompt": "str وصف بالعربية أو الإنجليزية",
                      "width": "int (256-1920)", "height": "int",
                      "model": "turbo (سريع مجاني)|flux (أجمل)"},

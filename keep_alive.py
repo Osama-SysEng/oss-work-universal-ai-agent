@@ -71,15 +71,20 @@ def start_router():
                      creationflags=subprocess.DETACHED_PROCESS)
 
 
+def _port_up() -> bool:
+    return alive("http://127.0.0.1:8080/")
+
+
 def start_build_server():
     """15 Nov live: the machine silently killed the finished build's server
     while the user was about to try it. The build server (8080, newest
     workspace that has a server.py) is now a guarded citizen too.
     18 Nov live: the newest workspace's server.py was polluted with U+200C
-    (SyntaxError), so the guard relaunched a broken file every 34 s and the
-    port stayed dead. A candidate must COMPILE before it is launched; the
-    guard then falls back to the next-newest valid workspace."""
-    log("BUILD-SERVER(8080) down -> restart newest VALID workspace server.py")
+    (SyntaxError) and a later one was truncated (exit 0, no serve loop), so
+    relaunching by mtime alone kept the port dead. The guard now PROVES a
+    candidate: launch, wait up to 6 s for the port, else kill and try the
+    next-newest compiling workspace."""
+    log("BUILD-SERVER(8080) down -> proving candidates one by one")
     root = Path(os.environ.get("APPDATA", "")) / "osv_agent_ws"
     if not root.exists():
         return
@@ -88,23 +93,33 @@ def start_build_server():
     if not cands:
         log("  no workspace with server.py found")
         return
-    # a workspace that fails to bring the port up twice is skipped for now,
-    # so one broken build cannot mask a working one forever (18 Nov live).
-    ws = next((d for d in cands
-               if _compiles(d / "server.py") and _BUILD_FAIL.get(d.name, 0) < 2),
-              None)
-    if ws is None:
-        log(f"  no usable server.py among {len(cands)} candidates (compile/fail budget)")
-        return
-    _BUILD_FAIL[ws.name] = _BUILD_FAIL.get(ws.name, 0) + 1
-    env = dict(os.environ, PYTHONIOENCODING="utf-8")
-    so = open(ws / "server_out.log", "a", encoding="utf-8", errors="replace")  # noqa: SIM115 — handle lives as long as the server process
-    se = open(ws / "server_err.log", "a", encoding="utf-8", errors="replace")  # noqa: SIM115 — same
-    subprocess.Popen([sys.executable, "server.py"], cwd=str(ws), env=env,
-                     stdout=so, stderr=se,
-                     creationflags=subprocess.CREATE_NO_WINDOW |
-                     subprocess.DETACHED_PROCESS, close_fds=False)
-    log(f"  launched server.py in {ws.name}")
+    for ws in cands:
+        if _BUILD_FAIL.get(ws.name, 0) >= 2:
+            continue
+        if not _compiles(ws / "server.py"):
+            log(f"  {ws.name}: server.py does not compile — skip")
+            _BUILD_FAIL[ws.name] = 2
+            continue
+        env = dict(os.environ, PYTHONIOENCODING="utf-8")
+        so = open(ws / "server_out.log", "a", encoding="utf-8", errors="replace")  # noqa: SIM115 — handle lives as long as the server process
+        se = open(ws / "server_err.log", "a", encoding="utf-8", errors="replace")  # noqa: SIM115 — same
+        proc = subprocess.Popen([sys.executable, "server.py"], cwd=str(ws), env=env,
+                                stdout=so, stderr=se,
+                                creationflags=subprocess.CREATE_NO_WINDOW |
+                                subprocess.DETACHED_PROCESS, close_fds=False)
+        for _ in range(6):
+            time.sleep(1)
+            if _port_up():
+                log(f"  UP: {ws.name} (8080 answering)")
+                _BUILD_FAIL.pop(ws.name, None)
+                return
+        log(f"  {ws.name}: launched but 8080 never answered — next candidate")
+        _BUILD_FAIL[ws.name] = _BUILD_FAIL.get(ws.name, 0) + 1
+        try:
+            proc.terminate()
+        except Exception as exc:  # noqa: BLE001 — cleanup must never kill the guard
+            log(f"  terminate {ws.name} skipped: {type(exc).__name__}")
+    log("  no candidate brought 8080 up this cycle")
 
 
 def _compiles(path: Path) -> bool:
@@ -120,37 +135,45 @@ def main():
     log("keep_alive watchdog started")
     engine_grace = 0
     while True:
-        if not alive("http://127.0.0.1:11400/health"):
-            if engine_grace == 0:
-                start_engine()
-                engine_grace = 6          # model takes ~60-90s to load
-            else:
-                engine_grace -= 1
-        else:
-            engine_grace = 0
-        if not alive("http://127.0.0.1:8000/api/health"):
-            start_backend()
-            time.sleep(10)                # give uvicorn time to bind
-        if not alive("http://127.0.0.1:31415/v1/models"):
-            router_grace = getattr(main, "_router_grace", 0)
-            if router_grace == 0:
-                start_router()
-                main._router_grace = 2    # electron app takes ~30s to bind
-            else:
-                main._router_grace = router_grace - 1
-        else:
-            main._router_grace = 0
-        if not alive("http://127.0.0.1:8080/"):
-            build_grace = getattr(main, "_build_grace", 0)
-            if build_grace == 0:
-                start_build_server()
-                main._build_grace = 1     # one retry cycle before again
-            else:
-                main._build_grace = build_grace - 1
-        else:
-            main._build_grace = 0
-            _BUILD_FAIL.clear()           # a live port forgives past failures
+        try:
+            engine_grace = _cycle(engine_grace)
+        except Exception as exc:  # noqa: BLE001 — one bad cycle must not kill the guard
+            log(f"CYCLE ERROR {type(exc).__name__}: {str(exc)[:200]}")
         time.sleep(15)
+
+
+def _cycle(engine_grace: int) -> int:
+    if not alive("http://127.0.0.1:11400/health"):
+        if engine_grace == 0:
+            start_engine()
+            engine_grace = 6          # model takes ~60-90s to load
+        else:
+            engine_grace -= 1
+    else:
+        engine_grace = 0
+    if not alive("http://127.0.0.1:8000/api/health"):
+        start_backend()
+        time.sleep(10)                # give uvicorn time to bind
+    if not alive("http://127.0.0.1:31415/v1/models"):
+        router_grace = getattr(main, "_router_grace", 0)
+        if router_grace == 0:
+            start_router()
+            main._router_grace = 2    # electron app takes ~30s to bind
+        else:
+            main._router_grace = router_grace - 1
+    else:
+        main._router_grace = 0
+    if not alive("http://127.0.0.1:8080/"):
+        build_grace = getattr(main, "_build_grace", 0)
+        if build_grace == 0:
+            start_build_server()
+            main._build_grace = 1     # one retry cycle before again
+        else:
+            main._build_grace = build_grace - 1
+    else:
+        main._build_grace = 0
+        _BUILD_FAIL.clear()           # a live port forgives past failures
+    return engine_grace
 
 
 if __name__ == "__main__":

@@ -38,9 +38,9 @@ def _stage_path(prefix: str, suffix: str = ".mp4") -> Path:
     return Path(p)
 
 
-def _publish(staged: Path) -> Path:
+def _publish(staged: Path, base: Path | None = None) -> Path:
     """انقل الملف المكتوب في التمب إلى مجلد الوسائط (يدعم العربية)."""
-    out = motion_dir() / staged.name
+    out = motion_dir(base) / staged.name
     shutil.move(str(staged), str(out))
     return out
 
@@ -103,9 +103,10 @@ PRESETS: dict[str, tuple] = {
 }
 
 
-def motion_dir() -> Path:
-    d = Path(os.environ.get("OSV_MEDIA_DIR")
-             or (Path(__file__).resolve().parent / "media"))
+def motion_dir(base: Path | None = None) -> Path:
+    d = Path(base) if base is not None else Path(
+        os.environ.get("OSV_MEDIA_DIR")
+        or (Path(__file__).resolve().parent / "media"))
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -142,7 +143,8 @@ def _resolve_src(src: str) -> str:
 
 
 def motion_clip(src: str, preset: str = "zoom_in", duration_s: float = 5.0,
-                fps: int = FPS, width: int = 704, height: int = 512
+                fps: int = FPS, width: int = 704, height: int = 512,
+                out_base: Path | None = None
                 ) -> tuple[bool, str]:
     """مقطع MP4: حركة كاميرا سينمائية مبرمَجة فوق مشهد مولّد — سريع بلا حصة."""
     if preset not in PRESETS:
@@ -168,7 +170,7 @@ def motion_clip(src: str, preset: str = "zoom_in", duration_s: float = 5.0,
         cx, cy, zoom = curve(i / max(n - 1, 1))
         writer.write(_frame_at(base, cx, cy, zoom, width, height))
     writer.release()
-    out = _publish(staged)
+    out = _publish(staged, out_base)
     check = cv2.VideoCapture(str(out))
     ok = check.isOpened() and int(check.get(cv2.CAP_PROP_FRAME_COUNT)) >= n - 1
     check.release()
@@ -180,12 +182,13 @@ def motion_clip(src: str, preset: str = "zoom_in", duration_s: float = 5.0,
 
 
 def genjutsu_variants(src: str, presets: list[str] | None = None,
-                      duration_s: float = 4.0) -> tuple[bool, str]:
+                      duration_s: float = 4.0,
+                      out_base: Path | None = None) -> tuple[bool, str]:
     """روح Genjutsu: صورة واحدة تدخل — رؤيات كثيرة تخرج. N مقاطع من نفس الصورة."""
     presets = presets or ["zoom_in", "orbit", "ken_burns", "crash_zoom"]
     clips, t0 = [], time.time()
     for p in presets[:6]:
-        ok, obs = motion_clip(src, p, duration_s)
+        ok, obs = motion_clip(src, p, duration_s, out_base=out_base)
         if not ok:
             return False, f"فشل المسبق {p}: {obs}"
         clips.append(str(obs.split(": ", 1)[1].split(" (")[0]))
@@ -195,7 +198,8 @@ def genjutsu_variants(src: str, presets: list[str] | None = None,
 
 
 def compose_cinema(scenes: list[dict], transition: str = "crossfade",
-                   fps: int = FPS) -> tuple[bool, str]:
+                   fps: int = FPS, out_base: Path | None = None
+                   ) -> tuple[bool, str]:
     """ستوري بورد سينمائي: [{image, preset, duration}] → فيلم واحد بانتقالات."""
     if not scenes or not isinstance(scenes, list):
         return False, "لا مشاهد — مرر [{image, preset, duration}]"
@@ -204,7 +208,7 @@ def compose_cinema(scenes: list[dict], transition: str = "crossfade",
         img = str(sc.get("image", ""))
         preset = str(sc.get("preset", "ken_burns"))
         dur = float(sc.get("duration", 4.0))
-        ok, obs = motion_clip(img, preset, dur, fps)
+        ok, obs = motion_clip(img, preset, dur, fps, out_base=out_base)
         if not ok:
             return False, f"المشهد {i + 1} فشل: {obs}"
         segs.append(obs.split(": ", 1)[1].split(" (")[0])
@@ -240,7 +244,7 @@ def compose_cinema(scenes: list[dict], transition: str = "crossfade",
                 writer.write(fr)
         prev_last = frames[-1]
     writer.release()
-    out = _publish(out)
+    out = _publish(out, out_base)
     if out.stat().st_size < 10_000:
         return False, "الملف المركّب ضئيل — يُرفض"
     return True, (f"فيلم سينمائي مركّب: {out} ({len(segs)} مشاهد، "

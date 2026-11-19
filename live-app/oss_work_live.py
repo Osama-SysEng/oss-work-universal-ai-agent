@@ -1935,6 +1935,28 @@ def _agent_execute(setup: dict, req: AgentRequest, on_event) -> dict:
     ctx = ag.AgentContext(ws, req.session_id,
                           extra_tools={**extra, **tm.team_tool()})
     ctx.chain = chain
+    # 22 Nov live: Copilot-style "think before acting" — one planning call
+    # emits a visible plan (status stage "plan") the user sees in the stream
+    # BEFORE the execution loop starts. Cheap (5-10s) but gives the agent's
+    # "intelligence" phase a place in the UX.
+    try:
+        if chain:
+            plan_msgs = [
+                {"role": "system", "content":
+                    "أنت وكيل برمجة بامتياز — قبل بدء العمل على المهمة، "
+                    "اكتب خطة أولية موجزة (3-6 نقاط حقيقية): الهدف الأول، "
+                    "أول خطوة بيدي الآن، المخاطر المتوقعة الحقيقية. لا تعدّ "
+                    "نقاطاً عامة ولا صفحات غلاف."},
+                {"role": "user", "content": req.task},
+            ]
+            plan_txt = " ".join("".join(cloud_stream(
+                chain[0], plan_msgs, effort="none", timeout=90,
+                max_tokens=1200)).split())
+            if plan_txt:
+                on_event({"type": "status", "stage": "plan",
+                          "text": "🧠 خطة أولية: " + plan_txt[:900]})
+    except Exception:  # noqa: BLE001, S110 — planning must never block the job
+        pass
     t_run_start = time.time()
     final, ok, team_info = None, False, None
     if req.mode == "team":
@@ -2107,6 +2129,16 @@ def agent_run(req: AgentRequest):
 # ---------------------------------------------------------------------------
 
 JOBS: dict[str, dict] = {}
+# 22 Nov live: request-level scheduling. Before: every /api/v1/agent/start
+# spawned a PARALLEL thread — when you requested a new task while the
+# previous ran, the STALE work was what you saw run first, and results
+# came back "done" out of chronological order. New semantics (like
+# Copilot/Code): one active job at a time; new requests are queued; the
+# NEWEST queued job starts next when the active one ends; the dispatcher
+# stops when the queue is empty.
+_AGENT_PENDING: list[str] = []          # queued job ids, newest last
+_AGENT_FLAG: dict[str, bool] = {"running": False}
+_JOBS_REQ: dict[str, AgentRequest] = {}
 _JOBS_LOCK = threading.Lock()
 _JOB_SEQ = 0
 ZOMBIE_SILENCE_S = 30 * 60          # running + 30min of silence = dead
@@ -2193,12 +2225,52 @@ def _new_job(req: AgentRequest) -> str:
     with _JOBS_LOCK:
         _JOB_SEQ += 1
         job_id = f"j{int(time.time())}-{_JOB_SEQ}"
-        JOBS[job_id] = {"task": req.task, "state": "running",
+        JOBS[job_id] = {"task": req.task, "state": "queued",
                         "started": time.time(), "last": time.time(),
                         "events": [], "result": None}
-    threading.Thread(target=_agent_job_worker, args=(job_id, req),
-                     daemon=True, name=f"agent-job-{job_id}").start()
+        _JOBS_REQ[job_id] = req
+        # 22 Nov live: like GitHub Copilot — a NEW request supersedes any
+        # still-QUEUED older request. Honesty: each superseded job is told
+        # why (state=failed + an event) instead of being silently dropped.
+        # Running jobs are NOT interrupted (safety).
+        for j in list(_AGENT_PENDING):
+            if j != job_id and JOBS[j].get("state") == "queued":
+                JOBS[j]["state"] = "failed"
+                JOBS[j]["result"] = {"ok": False, "superseded": True}
+                JOBS[j]["events"].append({
+                    "type": "status", "stage": "superseded",
+                    "text": ("⏹️ تم إلغاء هذه المهمة: جاءت مهمة أحدث فيكم "
+                             "الموعد")})
+                _AGENT_PENDING.remove(j)
+        _AGENT_PENDING.append(job_id)
+        should_start = not _AGENT_FLAG["running"]
+        if should_start:
+            _AGENT_FLAG["running"] = True
+    if should_start:
+        threading.Thread(target=_agent_run_loop, daemon=True,
+                         name="agent-dispatcher").start()
     return job_id
+
+
+def _agent_run_loop() -> None:
+    """Newest-first serialization: while a job runs, new requests join
+    _AGENT_PENDING; when the active job ends, the NEWEST queued job starts
+    next. When the queue is empty the dispatcher stops (flag back to False,
+    so the next request starts a new dispatcher)."""
+    global _AGENT_PENDING
+    while True:
+        with _JOBS_LOCK:
+            cand = [j for j in _AGENT_PENDING
+                    if JOBS.get(j, {}).get("state") == "queued"]
+            if not cand:
+                _AGENT_PENDING = [j for j in _AGENT_PENDING if j in JOBS]
+                _AGENT_FLAG["running"] = False
+                return
+            job_id = cand[-1]          # newest appended last -> newest first
+            req = _JOBS_REQ.pop(job_id, None)
+            JOBS[job_id]["state"] = "running"
+            JOBS[job_id]["started"] = time.time()
+        _agent_job_worker(job_id, req)
 
 
 @app.post("/api/v1/agent/start")

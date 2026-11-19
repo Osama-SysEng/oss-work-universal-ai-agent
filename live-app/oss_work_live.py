@@ -1876,6 +1876,7 @@ def _agent_setup(req: AgentRequest):
     """Everything both run doors need before the loop: chain, workspace,
     device kit, merged tools, learned brief, resume prior. None = no chain."""
     import osv_agent as ag
+    import osv_clean as clean
     import osv_device as dv
     import osv_distill
     import osv_git
@@ -1897,6 +1898,7 @@ def _agent_setup(req: AgentRequest):
     extra = dv.device_tools(kit)
     brief = memory_brief_for(req.task)
     extra.update(md.media_tools(md.MediaKit()))
+    extra.update(clean.clean_tools(kit))
     extra.update(sec.sec_tools())
     extra.update(osv_mcp.mcp_tools())
     extra.update(osv_git.git_tools())

@@ -410,14 +410,80 @@ def compose_system(task: str, table: dict | None = None,
     return base
 
 
+def _brief_args(args: dict) -> str:
+    """Compact arg signature: name:type[?] — keeps WHAT to pass, drops prose."""
+    out = []
+    for key, hint in (args or {}).items():
+        raw = str(hint).strip()
+        typ = re.split(r"[\s(]", raw, maxsplit=1)[0] or "str"
+        optional = ("اختياري" in raw or "optional" in raw.lower()
+                    or raw.startswith("bool"))
+        out.append(f"{key}:{typ}{'?' if optional else ''}")
+    return ", ".join(out)
+
+
+def _first_clause(text: str, limit: int = 78) -> str:
+    flat = " ".join(str(text or "").split())
+    if len(flat) <= limit:
+        return flat
+    cut = flat[:limit]
+    for sep in (" — ", "؛ ", "، ", ". "):
+        idx = cut.rfind(sep)
+        if idx >= 40:
+            return cut[:idx]
+    return cut.rstrip("،,; ") + "…"
+
+
+# Tools whose exact argument semantics matter most: docs stay verbatim.
+_ALWAYS_FULL = {
+    "bash", "read_file", "write_file", "list_dir", "glob", "grep",
+    "web_search", "web_fetch", "skill", "long_write",
+    "edit_file", "apply_patch", "verify_project",
+    "git_status", "git_commit", "git_diff", "git_log",
+}
+# Task keywords that must EXPAND a tool's docs on this run. A media task
+# needs image_generate's full 8-arg signature; a code task does not pay
+# for it in every wave (measured: the catalog alone was 6.5KB = ~2K tokens).
+_HOT_TOOLS = (
+    (r"صور|صورة|شعار|رسم|image|logo|png|svg", "image_generate"),
+    (r"فيديو|مقطع|video|mp4", "video_generate"),
+    (r"متحرك|أنيميشن|animation|motion|gif", "motion_generate"),
+    (r"سينما|مشهد|film|scene|cinema", "cinema_compose"),
+    (r"نظّف|تنظيف|نظافة|مسح|clean", "cleanup_"),
+    (r"أمن|أمان|اختراق|ثغر|security|vuln", "security_scan"),
+    (r"\bmcp\b", "mcp_"),
+    (r"\bgit\b|commit|diff|إصدار", "git_"),
+    (r"فريق|سرب|متواز|تواز|team|swarm|parallel", "team_"),
+    (r"supabase|سحاب|سحابة", "supabase_"),
+    (r"افحص|تحليل|هندسة عكس|reverse|replica|مثل هذا الموقع", "rea_"),
+    (r"نص طويل|كتاب|مستند|ingest|pdf|docx", "ingest"),
+)
+
+
+def _tool_docs(task: str, table: dict) -> str:
+    hot = set(_ALWAYS_FULL)
+    for rx, prefix in _HOT_TOOLS:
+        if re.search(rx, task or "", re.IGNORECASE):
+            hot |= {n for n in table if n.startswith(prefix)}
+    lines = []
+    for name, spec in table.items():
+        args = spec.get("args") or {}
+        if name in hot or len(args) <= 2:
+            lines.append(f"- {name}: {spec['desc']} | وسائط: "
+                         f"{json.dumps(args, ensure_ascii=False)}")
+        else:
+            lines.append(f"- {name}({_brief_args(args)}): "
+                         f"{_first_clause(spec['desc'])}")
+    return "\n".join(lines)
+
+
 def system_prompt(task: str, table: dict | None = None) -> str:
-    tool_docs = "\n".join(
-        f"- {n}: {t['desc']} | وسائط: {json.dumps(t['args'], ensure_ascii=False)}"
-        for n, t in (table or TOOLS).items())
+    docs = _tool_docs(task, table or TOOLS)
     return (
         "أنت وكيل OS_V — عقل هندسي يعمل بأدوات حقيقية. مهمتك الآن:\n"
         f"{task}\n\n"
-        "الأدوات المتاحة:\n" + tool_docs + "\n\n"
+        "الأدوات المتاحة (المختصرة تُظهر وسائطها بين قوسين؛ ? = اختياري):\n"
+        + docs + "\n\n"
         f"مكتبة مهارات متاحة (حمّلها بأداة skill عند الحاجة لخبرة معمّقة): {_available_skills()}\n\n"
         "قواعد العمل الصارمة:\n"
         "1. في كل دورة تُصدر إجراءً واحداً أو أكثر (مستقلة) في كتل كود json بهذا الشكل بالضبط:\n"
@@ -1085,6 +1151,7 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
     rs_bounced = False                     # zero-step done: one bounce, then
     dangling_bounced = False               # missing static refs: one bounce
     fs_bounced = False                     # honest failure with disclosure
+    verify_bounced = False                 # compile/JSON/HTML verify gate
     smoke_bounced = 0                      # hard — big single commands always cut
     fail_streak = 0                        # consecutive failed actions
     for step in range(1, steps_limit + 1):
@@ -1341,6 +1408,28 @@ def run_agent(task: str, ctx: AgentContext, chain: list[dict], on_event,
                      "ok": False})
                 return final, False
 
+
+            # VERIFY GATE (22 Nov — Devin parity: "won't stop until the PR is
+            # ready to merge"): `done` over a project that does not COMPILE,
+            # whose JSON is broken, or whose HTML calls a missing file is a
+            # claim, not a delivery. One deterministic bounce carries the REAL
+            # errors back; the model repairs with edit_file/apply_patch and
+            # re-verifies — no hand-waving, no new tools to trust.
+            if not verify_bounced and _is_build_task(task):
+                import osv_edit as _edit
+                v_ok, v_obs = _edit.verify_project(ctx)
+                say({"type": "agent_step", "step": step,
+                     "tool": "verify_project", "ok": v_ok})
+                if not v_ok:
+                    verify_bounced = True
+                    msgs.append({"role": "assistant", "content": reply})
+                    msgs.append({"role": "user", "content":
+                                 "الاكتمال مرفوض: فحص المشروع الآلي فشل. أصلح "
+                                 "الأخطاء التالية فعلياً (edit_file للتعديل "
+                                 "الجراحي إن كان الملف صالحاً عدا سطر، أو "
+                                 "write_file للجزء المكسور)، ثم أعد verify_project "
+                                 "حتى ينجح قبل done:\n" + v_obs[:1800]})
+                    continue
 
             # SMART SELF-CHECK: اختبارات كُتبت هذه الجولة ويجب أن تُشغَّل فعلاً
             # قبل ادعاء النجاح — النموذج كان يعلن النجاح فوق اختبارات لم ينفذها

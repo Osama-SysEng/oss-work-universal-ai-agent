@@ -85,7 +85,11 @@ def start_build_server():
     (SyntaxError) and a later one was truncated (exit 0, no serve loop), so
     relaunching by mtime alone kept the port dead. The guard now PROVES a
     candidate: launch, wait up to 6 s for the port, else kill and try the
-    next-newest compiling workspace."""
+    next-newest compiling workspace.
+    23 Nov live: a candidate server.py defaulted to PORT 8000 and BOUND THE
+    BACKEND PORT — the watchdog then "revived" the backend with a foreign
+    demo app. A candidate must never steal 8000; the launch is aborted the
+    moment api/health stops answering."""
     log("BUILD-SERVER(8080) down -> proving candidates one by one")
     root = Path(os.environ.get("APPDATA", "")) / "osv_agent_ws"
     if not root.exists():
@@ -102,6 +106,15 @@ def start_build_server():
             log(f"  {ws.name}: server.py does not compile — skip")
             _BUILD_FAIL[ws.name] = 2
             continue
+        try:
+            src = (ws / "server.py").read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            src = ""
+        if "8080" not in src:
+            # a hardcoded 8000 (or any foreign port) would bind the WRONG port
+            log(f"  {ws.name}: server.py hardcodes no 8080 — not a build-server candidate")
+            _BUILD_FAIL[ws.name] = 2
+            continue
         env = dict(os.environ, PYTHONIOENCODING="utf-8")
         so = open(ws / "server_out.log", "a", encoding="utf-8", errors="replace")  # noqa: SIM115 — handle lives as long as the server process
         se = open(ws / "server_err.log", "a", encoding="utf-8", errors="replace")  # noqa: SIM115 — same
@@ -111,16 +124,25 @@ def start_build_server():
                                 subprocess.DETACHED_PROCESS, close_fds=False)
         for _ in range(6):
             time.sleep(1)
+            if not alive("http://127.0.0.1:8000/api/health"):
+                log(f"  {ws.name}: stole port 8000 — killed, marking failed")
+                _BUILD_FAIL[ws.name] = 2
+                try:
+                    proc.terminate()
+                except Exception as exc:  # noqa: BLE001
+                    log(f"  terminate {ws.name} skipped: {type(exc).__name__}")
+                break
             if _port_up():
                 log(f"  UP: {ws.name} (8080 answering)")
                 _BUILD_FAIL.pop(ws.name, None)
                 return
-        log(f"  {ws.name}: launched but 8080 never answered — next candidate")
-        _BUILD_FAIL[ws.name] = _BUILD_FAIL.get(ws.name, 0) + 1
-        try:
-            proc.terminate()
-        except Exception as exc:  # noqa: BLE001 — cleanup must never kill the guard
-            log(f"  terminate {ws.name} skipped: {type(exc).__name__}")
+        else:
+            log(f"  {ws.name}: launched but 8080 never answered — next candidate")
+            _BUILD_FAIL[ws.name] = _BUILD_FAIL.get(ws.name, 0) + 1
+            try:
+                proc.terminate()
+            except Exception as exc:  # noqa: BLE001 — cleanup must never kill the guard
+                log(f"  terminate {ws.name} skipped: {type(exc).__name__}")
     log("  no candidate brought 8080 up this cycle")
 
 
@@ -167,6 +189,11 @@ def _cycle(engine_grace: int) -> int:
     if not alive("http://127.0.0.1:8000/api/health"):
         start_backend()
         time.sleep(10)                # give uvicorn time to bind
+        # 23 Nov live: while 8000 is broken, a workspace candidate launched for
+        # 8080 can BIND 8000 (its server.py defaults there) and masquerade as
+        # the backend. Never probe build candidates in the same cycle as a
+        # backend revive; wait until api/health answers again.
+        return engine_grace
     if not alive("http://127.0.0.1:31415/v1/models"):
         router_grace = getattr(main, "_router_grace", 0)
         if router_grace == 0:

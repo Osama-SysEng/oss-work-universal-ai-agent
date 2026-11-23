@@ -63,7 +63,13 @@ REPO_DIR = Path(os.environ.get(
     "OSS_WORK_REPO",
     r"C:\Users\ce\Desktop\التطويرات\تعديلات المشاريع الجماعية\oss-work-universal-ai-agent",
 ))
-sys.path.insert(0, str(REPO_DIR))
+# NEVER prepend REPO_DIR: doing so silently shadowed the live tree's own
+# modules with stale repo copies (measured 23 Nov — the pytest run imported
+# osv_agent.py from the repo while the live file was being edited, so new
+# gates never executed). The app directory is sys.path[0] when launched as a
+# script; the repo stays a LAST-RESORT fallback for packages absent locally.
+if str(REPO_DIR) not in sys.path:
+    sys.path.append(str(REPO_DIR))
 
 ENGINE_URL = os.environ.get("OSS_ENGINE_URL", "http://127.0.0.1:11400")
 ENGINE_TIMEOUT = int(os.environ.get("OSS_ENGINE_TIMEOUT", "300"))
@@ -1238,6 +1244,26 @@ def _sse(obj: dict) -> str:
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
 
+@app.get("/api/v1/selfcheck")
+def selfcheck():
+    """Which code is the RUNNING process actually executing?
+
+    Born from the 23 Nov incident: `oss_work_live.py` prepended the repo to
+    sys.path, so the live server imported stale repo copies of `osv_*` while
+    the live tree was the one being edited. Tests could not see it. This
+    endpoint makes the loaded files and the real tool table answerable."""
+    import osv_agent as _ag
+    import osv_edit as _ed
+
+    return {
+        "agent_file": _ag.__file__,
+        "edit_module": _ed.__file__,
+        "base_tools": sorted(_ag.TOOLS),
+        "edit_tools": sorted(_ed.edit_tools()),
+        "verify_gate": "verify_bounced" in _ag.run_agent.__code__.co_varnames,
+    }
+
+
 @app.post("/api/v1/chat/stream")
 def chat_stream(req: ChatRequest):
     """SSE pipeline: route → retrieve → generate, token by token."""
@@ -1879,6 +1905,7 @@ def _agent_setup(req: AgentRequest):
     import osv_clean as clean
     import osv_device as dv
     import osv_distill
+    import osv_edit
     import osv_git
     import osv_longio
     import osv_mcp
@@ -1902,6 +1929,7 @@ def _agent_setup(req: AgentRequest):
     extra.update(sec.sec_tools())
     extra.update(osv_mcp.mcp_tools())
     extra.update(osv_git.git_tools())
+    extra.update(osv_edit.edit_tools())
     extra.update(osv_longio.longio_tools())
     prior = sessions.resume_msgs(req.session_id) if req.resume else None
     resumed_turns = len(prior) if prior else 0

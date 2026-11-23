@@ -305,6 +305,13 @@ def test_run_agent_survives_overlong_resume_via_compaction(
                 '"args": {"answer": "أنجزت بعد الضغط"}}\n```')
 
     monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    # 22 Nov: the fake ceiling stands for a SMALL engine. Isolate the thing
+    # under test (history compaction) from the live tool catalog, which has
+    # grown to 37 tools and is measured separately in test_prompt_budget.py.
+    monkeypatch.setattr(ag, "TOOLS", {
+        "read_file": ag.TOOLS["read_file"],
+        "write_file": ag.TOOLS["write_file"],
+    })
     task = "اعم لي موقع جودة"
     ctx = ag.AgentContext(tmp_path, "t")
     seen = []
@@ -817,3 +824,61 @@ def test_simple_static_done_never_bounces(tmp_path, monkeypatch):
     assert ok is True
     assert (tmp_path / "landing.html").is_file()
     assert len(calls) == 1                            # single wave, no bounce
+
+
+def test_done_over_uncompilable_project_is_bounced_then_repaired(
+        tmp_path, monkeypatch):
+    """Devin parity (22 Nov): `done` cannot land over code that does not
+    compile. The gate carries the REAL SyntaxError back, and the model's
+    surgical fix lets the second verify pass — no fake completion."""
+    calls = []
+    broken = "x = 1\\n  else:\\n    pass\\n"
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        calls.append(msgs[-1]["content"])
+        if len(calls) == 1:
+            return [('```json\n{"tool": "write_file", "args": {"path": '
+                     '"tool.py", "content": "' + broken + '"}}\n```\n'
+                     '```json\n{"tool": "done", "args": {"answer": "تم"}}\n```')]
+        return [('```json\n{"tool": "write_file", "args": {"path": '
+                 '"tool.py", "content": "x = 2\\n"}}\n```\n'
+                 '```json\n{"tool": "done", "args": {"answer": "أصلحته"}}\n```')]
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    ctx = ag.AgentContext(tmp_path, "t")
+    evs = []
+    final, ok = ag.run_agent("ابن لي أداة صغيرة", ctx,
+                             [{}], evs.append, max_steps=6)
+    assert ok is True
+    assert any(e.get("tool") == "verify_project" and e.get("ok") is False
+               for e in evs)                      # the gate really ran
+    assert any("فحص المشروع الآلي فشل" in c and "tool.py" in c for c in calls)
+    assert "أصلحته" in final
+
+
+def test_done_over_broken_json_is_bounced_then_repaired(tmp_path, monkeypatch):
+    """The verify gate catches what no other gate sees: a project whose data
+    file cannot be parsed. `done` is bounced with the REAL JSON error and the
+    repaired file lets the run finish honestly."""
+    calls = []
+
+    def fake_gw(cfg, msgs, effort="none", timeout=300, max_tokens=3000):
+        calls.append(msgs[-1]["content"])
+        if len(calls) == 1:
+            return [('```json\n{"tool": "write_file", "args": {"path": '
+                     '"data.json", "content": "{oops"}}\n```\n'
+                     '```json\n{"tool": "done", "args": {"answer": "تم"}}\n```')]
+        return [('```json\n{"tool": "write_file", "args": {"path": '
+                 '"data.json", "content": "{\\"ok\\": true}"}}\n```\n'
+                 '```json\n{"tool": "done", "args": {"answer": "أصلحته"}}\n```')]
+
+    monkeypatch.setattr(m, "_gw_stream", fake_gw)
+    evs = []
+    final, ok = ag.run_agent("ابن لي موقعاً بسيطاً",
+                             ag.AgentContext(tmp_path, "t"),
+                             [{}], evs.append, max_steps=6)
+    assert ok is True
+    assert any(e.get("tool") == "verify_project" and e.get("ok") is False
+               for e in evs)
+    assert any("فحص المشروع الآلي فشل" in c and "data.json" in c for c in calls)
+    assert "أصلحته" in final
